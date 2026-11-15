@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lamp_widget_name">مصباح اقرأ</string>
+    <string name="lamp_widget_description">مصباح يخفت حين تغيب، مع آية تعيدك</string>
+    <string name="lamp_widget_empty">افتح اقرأ ليضيء مصباحك</string>
+</resources>

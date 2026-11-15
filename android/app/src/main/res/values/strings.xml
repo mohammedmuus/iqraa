@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lamp_widget_name">Iqraa light</string>
+    <string name="lamp_widget_description">A light that dims when you stay away, with a verse to bring you back</string>
+    <string name="lamp_widget_empty">Open Iqraa to turn your light on</string>
+</resources>

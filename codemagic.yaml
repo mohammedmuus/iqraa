@@ -1,0 +1,81 @@
+workflows:
+  ios-check:
+    name: iOS check build
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Get packages
+        script: flutter pub get
+      - name: Analyze
+        script: flutter analyze
+      - name: Build iOS without signing
+        script: |
+          flutter build ios --release --no-codesign \
+            --obfuscate --split-debug-info=build/symbols \
+            --dart-define=IQRAA_API=https://iqraa.co.tz
+    artifacts:
+      - build/ios/iphoneos/*.app
+
+  ios-sideload:
+    name: iOS test IPA for AltStore or Sideloadly
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Get packages
+        script: flutter pub get
+      - name: Build unsigned app
+        script: |
+          flutter build ios --release --no-codesign \
+            --obfuscate --split-debug-info=build/symbols \
+            --dart-define=IQRAA_API=https://iqraa.co.tz \
+            --dart-define=IQRAA_SHIELD=false \
+            --dart-define=IQRAA_INTEGRITY=false
+      - name: Package IPA
+        script: |
+          rm -rf build/ipa_unsigned && mkdir -p build/ipa_unsigned/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ipa_unsigned/Payload/
+          cd build/ipa_unsigned && zip -qry Iqraa-test.ipa Payload
+    artifacts:
+      - build/ipa_unsigned/Iqraa-test.ipa
+
+  ios-testflight:
+    name: iOS TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: Iqraa App Store Connect
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: tz.or.iqraa
+      groups:
+        - iqraa_release
+    scripts:
+      - name: Get packages
+        script: flutter pub get
+      - name: Use signing profiles
+        script: xcode-project use-profiles
+      - name: Build signed IPA
+        script: |
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist \
+            --obfuscate --split-debug-info=build/symbols \
+            --dart-define=IQRAA_API=https://iqraa.co.tz \
+            --dart-define=IQRAA_APPLE_TEAM=$APPLE_TEAM_ID
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

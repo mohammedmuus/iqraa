@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lamp_widget_name">Taa ya Iqraa</string>
+    <string name="lamp_widget_description">Taa inayofifia ukikaa mbali, pamoja na aya ya kukurudisha</string>
+    <string name="lamp_widget_empty">Fungua Iqraa uwashe taa yako</string>
+</resources>
