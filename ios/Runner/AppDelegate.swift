@@ -16,6 +16,9 @@ import workmanager_apple
     // Lets prayer and dhikr reminders show while the app is open.
     UNUserNotificationCenter.current().delegate = self as UNUserNotificationCenterDelegate
     // The hourly group check runs in its own Flutter engine, which needs the plugins too.
+    // iOS only accepts background task handlers while the app is launching. Registering the hourly group
+    // check here stops the later call from Dart registering it too late, which iOS answers by closing the app.
+    WorkmanagerPlugin.registerPeriodicTask(withIdentifier: "tz.or.iqraa.rivals", earliestBeginInSeconds: NSNumber(value: 60 * 60))
     WorkmanagerPlugin.registerLaunchHandlers()
     WorkmanagerPlugin.setPluginRegistrantCallback { registry in
       GeneratedPluginRegistrant.register(with: registry)
