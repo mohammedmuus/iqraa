@@ -142,8 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final services = AppScope.of(context);
     final prefs = services.prefs;
-    return RefreshIndicator(
-      color: Palette.green,
+    return PullRefresh(
       onRefresh: () => _load(fresh: true),
       child: ListView(
         padding: Layout.page(context, top: 8, bottom: 28),

@@ -147,8 +147,7 @@ class _AccountScreenState extends State<AccountScreen> {
     return Scaffold(
       body: PatternBackground(
         child: SafeArea(
-          child: RefreshIndicator(
-            color: Palette.green,
+          child: PullRefresh(
             onRefresh: _load,
             child: ListView(
               padding: Layout.page(context, top: 8, bottom: 28),

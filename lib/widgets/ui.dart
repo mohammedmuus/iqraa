@@ -622,3 +622,26 @@ class BookMarkPainter extends CustomPainter {
   @override
   bool shouldRepaint(BookMarkPainter old) => old.colour != colour;
 }
+
+/// Pull down to reload. Shows the phone's own spinner (iPhone or Android) and lets the page be pulled
+/// even when it is too short to scroll.
+class PullRefresh extends StatelessWidget {
+  const PullRefresh({super.key, required this.onRefresh, required this.child});
+
+  final Future<void> Function() onRefresh;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final behavior = ScrollConfiguration.of(context);
+    return RefreshIndicator.adaptive(
+      color: Palette.green,
+      onRefresh: onRefresh,
+      notificationPredicate: (notification) => notification.depth == 0 && notification.metrics.axis == Axis.vertical,
+      child: ScrollConfiguration(
+        behavior: behavior.copyWith(physics: AlwaysScrollableScrollPhysics(parent: behavior.getScrollPhysics(context))),
+        child: child,
+      ),
+    );
+  }
+}

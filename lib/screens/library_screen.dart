@@ -128,8 +128,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      color: Palette.green,
+    return PullRefresh(
       onRefresh: _search,
       child: ListView(
         padding: Layout.page(context, top: 16, bottom: 28),

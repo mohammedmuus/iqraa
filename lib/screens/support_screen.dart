@@ -130,8 +130,7 @@ class _SupportScreenState extends State<SupportScreen> {
   Widget build(BuildContext context) {
     final services = AppScope.of(context);
     final signedIn = services.session.signedIn;
-    return RefreshIndicator(
-      color: Palette.green,
+    return PullRefresh(
       onRefresh: () async {
         await _loadCampaigns();
         if (signedIn) {

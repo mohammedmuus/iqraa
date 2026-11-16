@@ -45,6 +45,8 @@ class _DhikrScreenState extends State<DhikrScreen> {
   Object? _error;
   bool _synced = false;
   final ScrollController _scroll = ScrollController();
+  final GlobalKey<_BoardsState> _boards = GlobalKey<_BoardsState>();
+  final GlobalKey<_GroupsState> _groups = GlobalKey<_GroupsState>();
 
   @override
   void initState() {
@@ -107,6 +109,22 @@ class _DhikrScreenState extends State<DhikrScreen> {
     }
   }
 
+  /// Pulling down reloads whichever section is open.
+  Future<void> _refresh() async {
+    final signedIn = AppScope.read(context).session.signedIn;
+    switch (_view) {
+      case _View.adhkar:
+        await _load();
+        if (signedIn && mounted) {
+          await AppScope.read(context).dhikr.sync();
+        }
+      case _View.rankings:
+        await _boards.currentState?._load(keep: true);
+      case _View.groups:
+        await _groups.currentState?._load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final services = AppScope.of(context);
@@ -150,39 +168,42 @@ class _DhikrScreenState extends State<DhikrScreen> {
         ),
       );
     } else {
-      body = _view == _View.rankings ? const _Boards() : const _Groups();
+      body = _view == _View.rankings ? _Boards(key: _boards) : _Groups(key: _groups);
     }
-    return CustomScrollView(
-      controller: _scroll,
-      slivers: [
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(side.left + 8, 16, side.right, 14),
-          sliver: SliverToBoxAdapter(child: DisplayTitle(context.t('dhikr_a'), second: context.t('dhikr_b'))),
-        ),
-        // The three sections stay at the top while the reader scrolls, so they can always switch.
-        SliverPersistentHeader(
-          pinned: true,
-          delegate: _PinnedTabs(
-            padding: EdgeInsets.fromLTRB(side.left, 6, side.right, 6),
-            child: Segmented<_View>(
-              height: 34,
-              options: [(_View.adhkar, context.t('dhikr_count')), (_View.rankings, context.t('dhikr_boards')), (_View.groups, context.t('dhikr_groups'))],
-              value: _view,
-              onChanged: (value) {
-                setState(() {
-                  _view = value;
-                  _selected = null;
-                });
-                _toTop();
-              },
+    return PullRefresh(
+      onRefresh: _refresh,
+      child: CustomScrollView(
+        controller: _scroll,
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(side.left + 8, 16, side.right, 14),
+            sliver: SliverToBoxAdapter(child: DisplayTitle(context.t('dhikr_a'), second: context.t('dhikr_b'))),
+          ),
+          // The three sections stay at the top while the reader scrolls, so they can always switch.
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _PinnedTabs(
+              padding: EdgeInsets.fromLTRB(side.left, 6, side.right, 6),
+              child: Segmented<_View>(
+                height: 34,
+                options: [(_View.adhkar, context.t('dhikr_count')), (_View.rankings, context.t('dhikr_boards')), (_View.groups, context.t('dhikr_groups'))],
+                value: _view,
+                onChanged: (value) {
+                  setState(() {
+                    _view = value;
+                    _selected = null;
+                  });
+                  _toTop();
+                },
+              ),
             ),
           ),
-        ),
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(side.left, 6, side.right, 28),
-          sliver: SliverToBoxAdapter(child: body),
-        ),
-      ],
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(side.left, 6, side.right, 28),
+            sliver: SliverToBoxAdapter(child: body),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -403,7 +424,7 @@ class _Ring extends CustomPainter {
 
 /// Worldwide and country rankings. Nobody appears until they join, and names show only if the reader turns them on.
 class _Boards extends StatefulWidget {
-  const _Boards();
+  const _Boards({super.key});
 
   @override
   State<_Boards> createState() => _BoardsState();
@@ -422,9 +443,12 @@ class _BoardsState extends State<_Boards> {
     unawaited(_load());
   }
 
-  Future<void> _load() async {
+  /// [keep] leaves the current board on screen while a pull down reload runs.
+  Future<void> _load({bool keep = false}) async {
     setState(() {
-      _board = null;
+      if (!keep) {
+        _board = null;
+      }
       _error = null;
     });
     try {
@@ -665,7 +689,7 @@ class BoardList extends StatelessWidget {
 }
 
 class _Groups extends StatefulWidget {
-  const _Groups();
+  const _Groups({super.key});
 
   @override
   State<_Groups> createState() => _GroupsState();
@@ -883,9 +907,12 @@ class _GroupBoardScreenState extends State<GroupBoardScreen> {
     unawaited(_load());
   }
 
-  Future<void> _load() async {
+  /// [keep] leaves the current board on screen while a pull down reload runs.
+  Future<void> _load({bool keep = false}) async {
     setState(() {
-      _board = null;
+      if (!keep) {
+        _board = null;
+      }
       _error = null;
     });
     try {
@@ -905,29 +932,32 @@ class _GroupBoardScreenState extends State<GroupBoardScreen> {
     return Scaffold(
       body: PatternBackground(
         child: SafeArea(
-          child: ListView(
-            padding: Layout.page(context, top: 8, bottom: 28),
-            children: [
-              Row(children: [RoundButton(icon: Icons.arrow_back_rounded, label: context.t('back'), onTap: () => Navigator.of(context).maybePop())]),
-              const SizedBox(height: 12),
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: DisplayTitle(widget.group['name'].toString(), second: context.t('dhikr_boards'), size: 30)),
-              const SizedBox(height: 12),
-              const _Intention(),
-              const SizedBox(height: 10),
-              Segmented<String>(
-                options: [('current', context.t('this_week')), ('last', context.t('last_week'))],
-                value: _week,
-                onChanged: (value) {
-                  setState(() => _week = value);
-                  unawaited(_load());
-                },
-              ),
-              const SizedBox(height: 10),
-              if (_board == null)
-                LoadView(error: _error, onRetry: _load)
-              else
-                BoardList(rows: [for (final row in (_board!['rows'] as List? ?? const [])) Map<String, dynamic>.from(row as Map)]),
-            ],
+          child: PullRefresh(
+            onRefresh: () => _load(keep: true),
+            child: ListView(
+              padding: Layout.page(context, top: 8, bottom: 28),
+              children: [
+                Row(children: [RoundButton(icon: Icons.arrow_back_rounded, label: context.t('back'), onTap: () => Navigator.of(context).maybePop())]),
+                const SizedBox(height: 12),
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: DisplayTitle(widget.group['name'].toString(), second: context.t('dhikr_boards'), size: 30)),
+                const SizedBox(height: 12),
+                const _Intention(),
+                const SizedBox(height: 10),
+                Segmented<String>(
+                  options: [('current', context.t('this_week')), ('last', context.t('last_week'))],
+                  value: _week,
+                  onChanged: (value) {
+                    setState(() => _week = value);
+                    unawaited(_load());
+                  },
+                ),
+                const SizedBox(height: 10),
+                if (_board == null)
+                  LoadView(error: _error, onRetry: _load)
+                else
+                  BoardList(rows: [for (final row in (_board!['rows'] as List? ?? const [])) Map<String, dynamic>.from(row as Map)]),
+              ],
+            ),
           ),
         ),
       ),

@@ -112,138 +112,141 @@ class _BookScreenState extends State<BookScreen> {
     return Scaffold(
       body: PatternBackground(
         child: SafeArea(
-          child: CustomScrollView(
-            slivers: [
-              SliverPadding(
-                padding: Layout.page(context, top: 8, bottom: 0),
-                sliver: SliverList.list(
-                  children: [
-                    Row(children: [RoundButton(icon: Icons.arrow_back_rounded, label: context.t('back'), onTap: () => Navigator.of(context).maybePop())]),
-                    const SizedBox(height: 12),
-                    Container(
-                      height: 240,
-                      decoration: BoxDecoration(color: Palette.stone, borderRadius: BorderRadius.circular(24)),
-                      alignment: Alignment.center,
-                      child: BookCover(book: book),
-                    ),
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          DisplayTitle((book['title'] ?? '').toString(), second: (book['author'] ?? '').toString(), size: 30),
-                          if ((book['arabic_title'] ?? '').toString().isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            SizedBox(width: double.infinity, child: ArabicText(book['arabic_title'].toString(), size: 24, color: Palette.body)),
-                          ],
-                          if (description.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text(description, textAlign: TextAlign.justify),
-                          ],
-                          if (edition.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(context.t('arabic_text', {'edition': edition}), style: Theme.of(context).textTheme.bodySmall),
-                          ],
-                          if (rights.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(rights, style: Theme.of(context).textTheme.bodySmall),
-                          ],
-                        ],
+          child: PullRefresh(
+            onRefresh: _load,
+            child: CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: Layout.page(context, top: 8, bottom: 0),
+                  sliver: SliverList.list(
+                    children: [
+                      Row(children: [RoundButton(icon: Icons.arrow_back_rounded, label: context.t('back'), onTap: () => Navigator.of(context).maybePop())]),
+                      const SizedBox(height: 12),
+                      Container(
+                        height: 240,
+                        decoration: BoxDecoration(color: Palette.stone, borderRadius: BorderRadius.circular(24)),
+                        alignment: Alignment.center,
+                        child: BookCover(book: book),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (_book == null)
-                      LoadView(error: _error, onRetry: _load, skeleton: const SkeletonRows(rows: 8))
-                    else if (chapters.isEmpty)
-                      Panel(child: Text(context.t('chapters_preparing'), textAlign: TextAlign.center))
-                    else ...[
-                      BusyButton(
-                        label: resume != null ? context.t('continue_at', {'title': resume['title'] ?? ''}) : context.t('start_reading'),
-                        onPressed: () async => resume != null ? _read(resume, at: services.prefs.placeIn(resume['id'].toString())) : _read(chapters.first),
-                      ),
-                      if (_book?['quran'] == true) ...[
-                        const SizedBox(height: 8),
-                        BusyButton(
-                          label: context.t('go_to'),
-                          style: BusyStyle.light,
-                          onPressed: () async {
-                            final target = await showModalBottomSheet<(int, int?)>(
-                              context: context,
-                              backgroundColor: Palette.surface,
-                              showDragHandle: true,
-                              isScrollControlled: true,
-                              builder: (_) => const _GoToSheet(),
-                            );
-                            if (target != null && mounted) {
-                              _goTo(target.$1, target.$2);
-                            }
-                          },
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                      _SaveForOffline(bookId: widget.bookId, title: (book['title'] ?? '').toString()),
                       const SizedBox(height: 16),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Text.rich(
-                          TextSpan(
-                            text: '${context.t('contents_a').toUpperCase()} ',
-                            style: TextStyle(color: Palette.quiet),
-                            children: [TextSpan(text: context.t('contents_b').toUpperCase(), style: TextStyle(color: Palette.ink))],
-                          ),
-                          style: Theme.of(context).textTheme.headlineSmall,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            DisplayTitle((book['title'] ?? '').toString(), second: (book['author'] ?? '').toString(), size: 30),
+                            if ((book['arabic_title'] ?? '').toString().isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              SizedBox(width: double.infinity, child: ArabicText(book['arabic_title'].toString(), size: 24, color: Palette.body)),
+                            ],
+                            if (description.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(description, textAlign: TextAlign.justify),
+                            ],
+                            if (edition.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(context.t('arabic_text', {'edition': edition}), style: Theme.of(context).textTheme.bodySmall),
+                            ],
+                            if (rights.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(rights, style: Theme.of(context).textTheme.bodySmall),
+                            ],
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      if (chapters.length > _findFrom) ...[
-                        TextField(
-                          onChanged: (value) => setState(() => _find = value),
-                          textInputAction: TextInputAction.search,
-                          maxLength: 60,
-                          decoration: InputDecoration(
-                            hintText: context.t('find_chapter'),
-                            counterText: '',
-                            isDense: true,
-                            prefixIcon: Icon(Icons.search_rounded, size: 19, color: Palette.muted),
+                      const SizedBox(height: 16),
+                      if (_book == null)
+                        LoadView(error: _error, onRetry: _load, skeleton: const SkeletonRows(rows: 8))
+                      else if (chapters.isEmpty)
+                        Panel(child: Text(context.t('chapters_preparing'), textAlign: TextAlign.center))
+                      else ...[
+                        BusyButton(
+                          label: resume != null ? context.t('continue_at', {'title': resume['title'] ?? ''}) : context.t('start_reading'),
+                          onPressed: () async => resume != null ? _read(resume, at: services.prefs.placeIn(resume['id'].toString())) : _read(chapters.first),
+                        ),
+                        if (_book?['quran'] == true) ...[
+                          const SizedBox(height: 8),
+                          BusyButton(
+                            label: context.t('go_to'),
+                            style: BusyStyle.light,
+                            onPressed: () async {
+                              final target = await showModalBottomSheet<(int, int?)>(
+                                context: context,
+                                backgroundColor: Palette.surface,
+                                showDragHandle: true,
+                                isScrollControlled: true,
+                                builder: (_) => const _GoToSheet(),
+                              );
+                              if (target != null && mounted) {
+                                _goTo(target.$1, target.$2);
+                              }
+                            },
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        _SaveForOffline(bookId: widget.bookId, title: (book['title'] ?? '').toString()),
+                        const SizedBox(height: 16),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Text.rich(
+                            TextSpan(
+                              text: '${context.t('contents_a').toUpperCase()} ',
+                              style: TextStyle(color: Palette.quiet),
+                              children: [TextSpan(text: context.t('contents_b').toUpperCase(), style: TextStyle(color: Palette.ink))],
+                            ),
+                            style: Theme.of(context).textTheme.headlineSmall,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        if (shown.isEmpty) Panel(child: Text(context.t('no_chapter_match'), textAlign: TextAlign.center)),
+                        if (chapters.length > _findFrom) ...[
+                          TextField(
+                            onChanged: (value) => setState(() => _find = value),
+                            textInputAction: TextInputAction.search,
+                            maxLength: 60,
+                            decoration: InputDecoration(
+                              hintText: context.t('find_chapter'),
+                              counterText: '',
+                              isDense: true,
+                              prefixIcon: Icon(Icons.search_rounded, size: 19, color: Palette.muted),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (shown.isEmpty) Panel(child: Text(context.t('no_chapter_match'), textAlign: TextAlign.center)),
+                        ],
                       ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              // Long books have hundreds of chapters, so rows are only built as they scroll into view.
-              if (shown.isNotEmpty)
-                SliverPadding(
-                  padding: Layout.page(context, top: 0, bottom: 28),
-                  sliver: SliverList.builder(
-                    itemCount: shown.length,
-                    itemBuilder: (context, i) => DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Palette.surface,
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(i == 0 ? 20 : 0),
-                          bottom: Radius.circular(i == shown.length - 1 ? 20 : 0),
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
-                          _ChapterRow(
-                            chapter: shown[i],
-                            translation: translation,
-                            current: resume?['id'] == shown[i]['id'],
-                            onTap: () => resume?['id'] == shown[i]['id'] ? _read(shown[i], at: services.prefs.placeIn(shown[i]['id'].toString())) : _read(shown[i]),
+                // Long books have hundreds of chapters, so rows are only built as they scroll into view.
+                if (shown.isNotEmpty)
+                  SliverPadding(
+                    padding: Layout.page(context, top: 0, bottom: 28),
+                    sliver: SliverList.builder(
+                      itemCount: shown.length,
+                      itemBuilder: (context, i) => DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Palette.surface,
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(i == 0 ? 20 : 0),
+                            bottom: Radius.circular(i == shown.length - 1 ? 20 : 0),
                           ),
-                        ],
+                        ),
+                        child: Column(
+                          children: [
+                            if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
+                            _ChapterRow(
+                              chapter: shown[i],
+                              translation: translation,
+                              current: resume?['id'] == shown[i]['id'],
+                              onTap: () => resume?['id'] == shown[i]['id'] ? _read(shown[i], at: services.prefs.placeIn(shown[i]['id'].toString())) : _read(shown[i]),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

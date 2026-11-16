@@ -68,8 +68,7 @@ class _ListenScreenState extends State<ListenScreen> {
   Widget build(BuildContext context) {
     final narration = AppScope.of(context).narration;
     final last = narration.lastListened;
-    return RefreshIndicator(
-      color: Palette.green,
+    return PullRefresh(
       onRefresh: _load,
       child: ListView(
         padding: Layout.page(context, top: 16, bottom: 28),
