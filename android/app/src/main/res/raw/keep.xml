@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Resource shrinking cannot see icons named from Dart, so the reminder icon is kept here. -->
+<!-- Resource shrinking cannot see files named from Dart, so the reminder icon and the adhan sound are kept here. -->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@drawable/ic_notification" />
+    tools:keep="@drawable/ic_notification,@raw/adhan_short" />

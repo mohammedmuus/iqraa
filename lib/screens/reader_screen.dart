@@ -10,6 +10,7 @@ import '../core/prefs.dart';
 import '../core/scope.dart';
 import '../core/strings.dart';
 import '../theme.dart';
+import '../widgets/ask_scholar.dart';
 import '../widgets/player_bar.dart';
 import '../widgets/share_card.dart';
 import '../widgets/ui.dart';
@@ -95,6 +96,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _finished = true;
       HapticFeedback.mediumImpact();
       unawaited(celebrate(context, context.t('chapter_done'), body: context.t('chapter_done_body')));
+      final services = AppScope.read(context);
+      unawaited(services.reminders.chapterFinished(_chapter!['id'].toString(), (_chapter!['title'] ?? '').toString(), services.prefs.language));
     }
   }
 
@@ -232,7 +235,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
         : '${widget.bookTitle}, ${chapter['title'] ?? ''}';
     final language = AppScope.read(context).prefs.translation;
     final translation = language == null ? '' : ((paragraph['translations'] as Map?)?[language] ?? '').toString();
-    return sharePassage(context, arabic: (paragraph['arabic'] ?? '').toString(), translation: translation, reference: reference);
+    return sharePassage(
+      context,
+      arabic: (paragraph['arabic'] ?? '').toString(),
+      translation: translation,
+      reference: reference,
+      link: chapterLink(chapter['id'].toString(), paragraph: paragraph['number']),
+    );
   }
 
   /// Repeats the paragraph being narrated, or a stretch starting from it, for memorising.
@@ -410,6 +419,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
                               ),
                               const SizedBox(width: 6),
                               Expanded(child: Text(context.t('translation_note'), style: Theme.of(context).textTheme.bodySmall)),
+                            ],
+                          ),
+                        ),
+                      if (chapter != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+                          child: Row(
+                            children: [
+                              Icon(Icons.forum_outlined, size: 15, color: look.muted),
+                              const SizedBox(width: 6),
+                              Flexible(child: Text(context.t('hard_to_follow'), style: Theme.of(context).textTheme.bodySmall)),
+                              TextButton(
+                                style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 6)),
+                                onPressed: () => askScholar(
+                                  context,
+                                  reference: (chapter['book'] as Map?)?['quran'] == true ? (chapter['title'] ?? '').toString() : '${widget.bookTitle}, ${chapter['title'] ?? ''}',
+                                  link: chapterLink(chapter['id'].toString()),
+                                ),
+                                child: Text(context.t('ask_scholar'), style: TextStyle(fontSize: 12.5, color: Palette.green, fontWeight: FontWeight.w600)),
+                              ),
                             ],
                           ),
                         ),

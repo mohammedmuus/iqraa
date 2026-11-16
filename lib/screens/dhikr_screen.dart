@@ -15,7 +15,7 @@ import '../widgets/ui.dart';
 import 'auth_screens.dart';
 import 'onboarding_screen.dart';
 
-enum _View { count, boards, groups }
+enum _View { adhkar, rankings, groups }
 
 /// Countries offered for the country board. Names are proper nouns and stay as written.
 const countryNames = {
@@ -30,22 +30,57 @@ const countryNames = {
 };
 
 class DhikrScreen extends StatefulWidget {
-  const DhikrScreen({super.key});
+  const DhikrScreen({super.key, this.reselect});
+
+  /// Ticks when the Dhikr tab is tapped again, which brings the reader back to the adhkar at the top.
+  final Listenable? reselect;
 
   @override
   State<DhikrScreen> createState() => _DhikrScreenState();
 }
 
 class _DhikrScreenState extends State<DhikrScreen> {
-  _View _view = _View.count;
+  _View _view = _View.adhkar;
   String? _selected;
   Object? _error;
   bool _synced = false;
+  final ScrollController _scroll = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    widget.reselect?.addListener(_backToAdhkar);
     unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(DhikrScreen old) {
+    super.didUpdateWidget(old);
+    if (old.reselect != widget.reselect) {
+      old.reselect?.removeListener(_backToAdhkar);
+      widget.reselect?.addListener(_backToAdhkar);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.reselect?.removeListener(_backToAdhkar);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _backToAdhkar() {
+    setState(() {
+      _view = _View.adhkar;
+      _selected = null;
+    });
+    _toTop();
+  }
+
+  void _toTop() {
+    if (_scroll.hasClients && _scroll.offset > 0) {
+      unawaited(_scroll.animateTo(0, duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic));
+    }
   }
 
   @override
@@ -77,51 +112,103 @@ class _DhikrScreenState extends State<DhikrScreen> {
     final services = AppScope.of(context);
     final store = services.dhikr;
     final selected = store.adhkar.where((d) => d['slug'] == _selected).firstOrNull;
-    return ListView(
-      padding: Layout.page(context, top: 16, bottom: 28),
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 8),
-          child: DisplayTitle(context.t('dhikr_a'), second: context.t('dhikr_b')),
-        ),
-        const SizedBox(height: 14),
-        Segmented<_View>(
-          height: 34,
-          options: [(_View.count, context.t('dhikr_count')), (_View.boards, context.t('dhikr_boards')), (_View.groups, context.t('dhikr_groups'))],
-          value: _view,
-          onChanged: (value) => setState(() => _view = value),
-        ),
-        const SizedBox(height: 12),
-        if (_view == _View.count) ...[
-          if (store.adhkar.isEmpty)
-            LoadView(error: _error, onRetry: _load)
-          else if (selected != null)
-            _Counter(dhikr: selected, onBack: () => setState(() => _selected = null))
-          else ...[
-            if (store.profile != null) _Totals(profile: store.profile!),
-            AdaptiveGrid(
-              minTileWidth: 150,
-              spacing: 8,
-              children: [for (final dhikr in store.adhkar) _DhikrTile(dhikr: dhikr, onTap: () => setState(() => _selected = dhikr['slug'].toString()))],
-            ),
-          ],
-        ] else if (!services.session.signedIn)
-          Panel(
-            child: Column(
+    final side = Layout.page(context);
+    final Widget body;
+    if (_view == _View.adhkar) {
+      body = store.adhkar.isEmpty
+          ? LoadView(error: _error, onRetry: _load)
+          : selected != null
+          ? _Counter(dhikr: selected, onBack: () => setState(() => _selected = null))
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(context.t('sign_in_boards'), textAlign: TextAlign.center),
-                const SizedBox(height: 12),
-                BusyButton(label: context.t('sign_in'), onPressed: () => openSignIn(context)),
+                if (store.profile != null) _Totals(profile: store.profile!),
+                AdaptiveGrid(
+                  minTileWidth: 150,
+                  spacing: 8,
+                  children: [
+                    for (final dhikr in store.adhkar)
+                      _DhikrTile(
+                        dhikr: dhikr,
+                        onTap: () {
+                          setState(() => _selected = dhikr['slug'].toString());
+                          _toTop();
+                        },
+                      ),
+                  ],
+                ),
               ],
+            );
+    } else if (!services.session.signedIn) {
+      body = Panel(
+        child: Column(
+          children: [
+            Text(context.t('sign_in_boards'), textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            BusyButton(label: context.t('sign_in'), onPressed: () => openSignIn(context)),
+          ],
+        ),
+      );
+    } else {
+      body = _view == _View.rankings ? const _Boards() : const _Groups();
+    }
+    return CustomScrollView(
+      controller: _scroll,
+      slivers: [
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(side.left + 8, 16, side.right, 14),
+          sliver: SliverToBoxAdapter(child: DisplayTitle(context.t('dhikr_a'), second: context.t('dhikr_b'))),
+        ),
+        // The three sections stay at the top while the reader scrolls, so they can always switch.
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _PinnedTabs(
+            padding: EdgeInsets.fromLTRB(side.left, 6, side.right, 6),
+            child: Segmented<_View>(
+              height: 34,
+              options: [(_View.adhkar, context.t('dhikr_count')), (_View.rankings, context.t('dhikr_boards')), (_View.groups, context.t('dhikr_groups'))],
+              value: _view,
+              onChanged: (value) {
+                setState(() {
+                  _view = value;
+                  _selected = null;
+                });
+                _toTop();
+              },
             ),
-          )
-        else if (_view == _View.boards)
-          const _Boards()
-        else
-          const _Groups(),
+          ),
+        ),
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(side.left, 6, side.right, 28),
+          sliver: SliverToBoxAdapter(child: body),
+        ),
       ],
     );
   }
+}
+
+class _PinnedTabs extends SliverPersistentHeaderDelegate {
+  const _PinnedTabs({required this.child, required this.padding});
+
+  final Widget child;
+  final EdgeInsets padding;
+
+  @override
+  double get minExtent => 46 + padding.vertical;
+
+  @override
+  double get maxExtent => minExtent;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return ColoredBox(
+      color: Palette.canvas,
+      child: Padding(padding: padding, child: Center(child: child)),
+    );
+  }
+
+  @override
+  bool shouldRebuild(_PinnedTabs old) => true;
 }
 
 class _Totals extends StatelessWidget {
@@ -314,7 +401,7 @@ class _Ring extends CustomPainter {
   bool shouldRepaint(_Ring old) => old.share != share;
 }
 
-/// Worldwide and country boards, behind the no-riya notice. Nobody appears until they accept it and opt in.
+/// Worldwide and country rankings. Nobody appears until they join, and names show only if the reader turns them on.
 class _Boards extends StatefulWidget {
   const _Boards();
 
@@ -328,19 +415,11 @@ class _BoardsState extends State<_Boards> {
   String _filter = '';
   Map<String, dynamic>? _board;
   Object? _error;
-  final TextEditingController _name = TextEditingController();
-  bool _nameFilled = false;
 
   @override
   void initState() {
     super.initState();
     unawaited(_load());
-  }
-
-  @override
-  void dispose() {
-    _name.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -364,7 +443,6 @@ class _BoardsState extends State<_Boards> {
     try {
       await AppScope.read(context).dhikr.updateProfile(changes);
       if (mounted) {
-        showMessage(context, context.t('saved'));
         unawaited(_load());
       }
     } on ApiException catch (error) {
@@ -380,7 +458,7 @@ class _BoardsState extends State<_Boards> {
       await services.api.patch('me', body: {'country': code}, auth: true);
       await services.dhikr.sync();
       if (mounted) {
-        showMessage(context, context.t('saved'));
+        unawaited(_load());
       }
     } on ApiException catch (error) {
       if (mounted) {
@@ -396,34 +474,20 @@ class _BoardsState extends State<_Boards> {
     final onBoards = profile?['on_boards'] == true;
     final rows = [for (final row in (_board?['rows'] as List? ?? const [])) Map<String, dynamic>.from(row as Map)];
     final you = _board?['you'];
-    if (!_nameFilled && profile != null) {
-      _nameFilled = true;
-      _name.text = (profile['requested_name'] ?? '').toString();
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Panel(
-          color: Palette.greenSoft,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(context.t('riya_notice'), textAlign: TextAlign.justify, style: TextStyle(fontSize: 13, height: 1.55, color: Palette.greenDeep)),
-              const SizedBox(height: 10),
-              if (profile != null && !onBoards)
-                BusyButton(label: context.t('join_boards'), style: BusyStyle.green, onPressed: () => _update({'accept_notice': true, 'on_boards': true}))
-              else if (onBoards)
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: TextButton(onPressed: () => _update({'on_boards': false}), child: Text(context.t('leave_boards'), style: TextStyle(color: Palette.greenDeep))),
-                ),
-              if (profile != null && !onBoards) ...[
-                const SizedBox(height: 6),
-                Text(context.t('off_boards'), style: TextStyle(fontSize: 12, color: Palette.greenDeep)),
-              ],
-            ],
-          ),
-        ),
+        const _Intention(),
+        if (profile != null && !onBoards) ...[
+          const SizedBox(height: 8),
+          BusyButton(label: context.t('join_boards'), style: BusyStyle.green, onPressed: () => _update({'accept_notice': true, 'on_boards': true})),
+          const SizedBox(height: 6),
+          Text(context.t('off_boards'), textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
+        ],
+        if (profile != null && onBoards) ...[
+          const SizedBox(height: 10),
+          _Appearance(profile: profile, onUpdate: _update, onCountry: _setCountry),
+        ],
         const SizedBox(height: 12),
         Segmented<String>(
           options: [('worldwide', context.t('worldwide')), ('countries', context.t('countries'))],
@@ -469,60 +533,85 @@ class _BoardsState extends State<_Boards> {
           LoadView(error: _error, onRetry: _load)
         else
           BoardList(rows: rows, countries: _kind == 'countries'),
-        if (profile != null) ...[
-          const SizedBox(height: 16),
-          Panel(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(context.t('board_name'), style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text(context.t('board_name_help', {'handle': profile['handle'] ?? ''}), style: Theme.of(context).textTheme.bodySmall),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _name,
-                  maxLength: 40,
-                  decoration: InputDecoration(counterText: '', hintText: context.t('board_name')),
-                ),
-                const SizedBox(height: 8),
-                BusyButton(label: context.t('request_name'), style: BusyStyle.light, onPressed: () => _update({'requested_name': _name.text.trim()})),
-                if (profile['name_status'] == 'pending') ...[
-                  const SizedBox(height: 6),
-                  Text(context.t('name_pending'), style: Theme.of(context).textTheme.bodySmall),
-                ],
-                if (profile['name_status'] == 'declined') ...[
-                  const SizedBox(height: 6),
-                  Text(context.t('name_declined'), style: TextStyle(fontSize: 12, color: Palette.bad)),
-                ],
-                if (profile['name_status'] == 'approved')
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: profile['show_name'] == true,
-                    activeTrackColor: Palette.green,
-                    title: Text(context.t('show_name'), style: const TextStyle(fontSize: 13)),
-                    onChanged: (value) => _update({'show_name': value}),
-                  ),
-                const Divider(height: 24),
-                Text(context.t('country'), style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: countryNames.containsKey(profile['country']) ? profile['country'].toString() : '',
-                  isExpanded: true,
-                  items: [
-                    DropdownMenuItem(value: '', child: Text(context.t('no_country'))),
-                    for (final entry in countryNames.entries) DropdownMenuItem(value: entry.key, child: Text(entry.value)),
-                  ],
-                  onChanged: (value) => _setCountry(value ?? ''),
-                ),
-                const SizedBox(height: 6),
-                Text(context.t('country_help'), style: Theme.of(context).textTheme.bodySmall),
-              ],
+        if (profile != null && onBoards)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Center(
+              child: TextButton(onPressed: () => _update({'on_boards': false}), child: Text(context.t('leave_boards'), style: TextStyle(color: Palette.muted))),
             ),
           ),
-        ],
       ],
     );
   }
+}
+
+/// One short line about intention, shown above the rankings and group rankings.
+class _Intention extends StatelessWidget {
+  const _Intention();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(color: Palette.greenSoft, borderRadius: BorderRadius.circular(14)),
+      child: Row(
+        children: [
+          Icon(Icons.favorite_border_rounded, size: 16, color: Palette.greenDeep),
+          const SizedBox(width: 10),
+          Expanded(child: Text(context.t('riya_notice'), style: TextStyle(fontSize: 13, color: Palette.greenDeep))),
+        ],
+      ),
+    );
+  }
+}
+
+/// The name switch and country, in one small card. The name is the one on the account.
+class _Appearance extends StatelessWidget {
+  const _Appearance({required this.profile, required this.onUpdate, required this.onCountry});
+
+  final Map<String, dynamic> profile;
+  final Future<void> Function(Map<String, dynamic>) onUpdate;
+  final Future<void> Function(String) onCountry;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (profile['display_name'] ?? '').toString().trim();
+    final showing = profile['show_name'] == true;
+    final shown = displayName(context, (profile['public_name'] ?? profile['handle'] ?? '').toString());
+    return Panel(
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            value: showing && name.isNotEmpty,
+            activeTrackColor: Palette.green,
+            title: Text(context.t('show_name'), style: TextStyle(fontSize: 14, color: Palette.ink)),
+            subtitle: Text(name.isEmpty ? context.t('name_needed') : context.t('shown_as', {'name': shown}), style: Theme.of(context).textTheme.bodySmall),
+            onChanged: name.isEmpty ? null : (value) => onUpdate({'show_name': value}),
+          ),
+          DropdownButtonFormField<String>(
+            initialValue: countryNames.containsKey(profile['country']) ? profile['country'].toString() : '',
+            isExpanded: true,
+            decoration: InputDecoration(labelText: context.t('country')),
+            items: [
+              DropdownMenuItem(value: '', child: Text(context.t('no_country'))),
+              for (final entry in countryNames.entries) DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+            ],
+            onChanged: (value) => onCountry(value ?? ''),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shows the server's "Muumin 123456" handle with the word in the reader's language.
+String displayName(BuildContext context, String name) {
+  const prefix = 'Muumin ';
+  return name.startsWith(prefix) ? '${context.t('muumin')} ${name.substring(prefix.length)}' : name;
 }
 
 class BoardList extends StatelessWidget {
@@ -553,7 +642,7 @@ class BoardList extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          countries ? (_countryName(rows[i]['country'])) : (rows[i]['you'] == true ? '${rows[i]['name']} (${context.t('you_label')})' : (rows[i]['name'] ?? '').toString()),
+                          countries ? (_countryName(rows[i]['country'])) : (rows[i]['you'] == true ? '${displayName(context, (rows[i]['name'] ?? '').toString())} (${context.t('you_label')})' : displayName(context, (rows[i]['name'] ?? '').toString())),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500, color: Palette.ink),
@@ -823,7 +912,7 @@ class _GroupBoardScreenState extends State<GroupBoardScreen> {
               const SizedBox(height: 12),
               Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: DisplayTitle(widget.group['name'].toString(), second: context.t('dhikr_boards'), size: 30)),
               const SizedBox(height: 12),
-              Panel(color: Palette.greenSoft, child: Text(context.t('riya_notice'), textAlign: TextAlign.justify, style: TextStyle(fontSize: 13, height: 1.55, color: Palette.greenDeep))),
+              const _Intention(),
               const SizedBox(height: 10),
               Segmented<String>(
                 options: [('current', context.t('this_week')), ('last', context.t('last_week'))],

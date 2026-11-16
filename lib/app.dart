@@ -91,6 +91,7 @@ class _IqraaAppState extends State<IqraaApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
       session.backgroundedAt ??= DateTime.now();
     } else if (state == AppLifecycleState.resumed) {
+      unawaited(services.reminders.stopAdhan());
       unawaited(services.reminders.schedule(services.prefs.language));
       unawaited(services.rivals.sync());
       unawaited(Lamp.refresh(services.cache, services.prefs.language));
@@ -227,9 +228,11 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   static const _library = 1;
   static const _listen = 2;
+  static const _dhikr = 3;
 
   int _index = 0;
   final FocusNode _searchFocus = FocusNode();
+  final ValueNotifier<int> _dhikrAgain = ValueNotifier(0);
 
   @override
   void initState() {
@@ -240,10 +243,18 @@ class _ShellState extends State<Shell> {
   @override
   void dispose() {
     _searchFocus.dispose();
+    _dhikrAgain.dispose();
     super.dispose();
   }
 
-  void _go(int index) => setState(() => _index = index);
+  void _go(int index) {
+    // Tapping the Dhikr tab while already on it goes back to the adhkar at the top.
+    if (index == _index && index == _dhikr) {
+      _dhikrAgain.value++;
+      return;
+    }
+    setState(() => _index = index);
+  }
 
   void _search() {
     _go(_library);
@@ -257,7 +268,7 @@ class _ShellState extends State<Shell> {
       HomeScreen(onSearch: _search, onLibrary: () => _go(_library), onListen: () => _go(_listen)),
       LibraryScreen(searchFocus: _searchFocus),
       const ListenScreen(),
-      const DhikrScreen(),
+      DhikrScreen(reselect: _dhikrAgain),
       if (giving) const SupportScreen(),
     ];
     final items = [

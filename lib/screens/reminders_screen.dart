@@ -143,6 +143,19 @@ class RemindersScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
                 child: Column(
                   children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      activeTrackColor: Palette.green,
+                      value: reminders.adhan,
+                      title: Text(context.t('rem_kind_adhan'), style: const TextStyle(fontSize: 14)),
+                      subtitle: Text(context.t('adhan_note'), style: TextStyle(fontSize: 12, color: Palette.muted)),
+                      onChanged: (value) async {
+                        await reminders.setAdhan(value, language);
+                        if (value && !reminders.enabled && context.mounted) {
+                          await _switch(context, true);
+                        }
+                      },
+                    ),
                     for (final kind in ReminderKind.values)
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,

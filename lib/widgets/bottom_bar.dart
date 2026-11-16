@@ -49,9 +49,6 @@ class _BottomBarState extends State<BottomBar> with SingleTickerProviderStateMix
   }
 
   void _tap(int i) {
-    if (i == widget.index) {
-      return;
-    }
     HapticFeedback.selectionClick();
     widget.onTap(i);
   }
@@ -250,10 +247,8 @@ class SideRail extends StatelessWidget {
                 excludeSemantics: true,
                 child: InkWell(
                   onTap: () {
-                    if (i != index) {
-                      HapticFeedback.selectionClick();
-                      onTap(i);
-                    }
+                    HapticFeedback.selectionClick();
+                    onTap(i);
                   },
                   child: Padding(
                     padding: EdgeInsets.symmetric(vertical: short ? 5 : 9),

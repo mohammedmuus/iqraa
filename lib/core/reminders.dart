@@ -28,6 +28,9 @@ class Reminders extends ChangeNotifier {
 
   bool enabled = false;
   bool promptDismissed = false;
+
+  /// The opening takbirs of the adhan at each prayer time. Off until the reader turns it on.
+  bool adhan = false;
   String? cityId;
   PrayerMethod? _method;
   AsrMethod asr = AsrMethod.standard;
@@ -45,6 +48,7 @@ class Reminders extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     enabled = prefs.getBool('reminders_on') ?? false;
     promptDismissed = prefs.getBool('reminders_prompt_dismissed') ?? false;
+    adhan = prefs.getBool('reminders_adhan') ?? false;
     cityId = prefs.getString('reminders_city');
     final method = prefs.getString('reminders_method');
     _method = method == null ? null : PrayerMethod.values.where((value) => value.name == method).firstOrNull;
@@ -118,6 +122,66 @@ class Reminders extends ChangeNotifier {
     await _changed(language);
   }
 
+  Future<void> setKinds(Set<ReminderKind> value, String language) async {
+    kinds = {...value};
+    await _changed(language);
+  }
+
+  Future<void> setAdhan(bool on, String language) async {
+    adhan = on;
+    if (on && Platform.isAndroid) {
+      // Exact timing needs the phone's Alarms and reminders permission. Without it the adhan still
+      // plays, only a little late.
+      await _init();
+      final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (await android?.canScheduleExactNotifications() == false) {
+        await android?.requestExactAlarmsPermission();
+      }
+    }
+    await _changed(language);
+  }
+
+  /// Congratulates the reader once for each chapter they finish, when notifications are allowed.
+  Future<void> chapterFinished(String chapterId, String chapterTitle, String language) async {
+    final prefs = await SharedPreferences.getInstance();
+    final done = prefs.getStringList('chapters_done') ?? <String>[];
+    if (done.contains(chapterId)) {
+      return;
+    }
+    final kept = done.length < 2000 ? done : done.sublist(done.length - 1999);
+    await prefs.setStringList('chapters_done', [...kept, chapterId]);
+    await _init();
+    if (Platform.isAndroid) {
+      final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (await android?.areNotificationsEnabled() == false) {
+        return;
+      }
+    }
+    String t(String key, [Map<String, Object> values = const {}]) => Strings.of(language, key, values);
+    await _plugin.show(
+      id: _chapterId,
+      title: t('chapter_note_title'),
+      body: chapterTitle.isEmpty ? t('chapter_done_body') : t('chapter_note_body', {'chapter': chapterTitle}),
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails('tz.or.iqraa.progress', t('channel_progress'), icon: 'ic_notification'),
+        iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: false),
+      ),
+    );
+  }
+
+  /// Silences an adhan that is playing, used when the reader opens the app.
+  Future<void> stopAdhan() async {
+    if (!Platform.isAndroid || !_ready) {
+      return;
+    }
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    for (final shown in await android?.getActiveNotifications() ?? const <ActiveNotification>[]) {
+      if (shown.channelId == _adhanChannel && shown.id != null) {
+        await _plugin.cancel(id: shown.id!);
+      }
+    }
+  }
+
   Future<void> dismissPrompt() async {
     promptDismissed = true;
     notifyListeners();
@@ -135,6 +199,7 @@ class Reminders extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('reminders_on', enabled);
+    await prefs.setBool('reminders_adhan', adhan);
     if (cityId != null) {
       await prefs.setString('reminders_city', cityId!);
     }
@@ -155,6 +220,8 @@ class Reminders extends ChangeNotifier {
     final due = _plan(calculator, now, language)..sort((a, b) => a.at.compareTo(b.at));
     // Only waiting reminders are replaced, so alerts already on the screen stay.
     await _plugin.cancelAllPendingNotifications();
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final exact = await android?.canScheduleExactNotifications() ?? false;
     var id = 0;
     for (final item in due.take(_limit)) {
       await _plugin.zonedSchedule(
@@ -162,8 +229,8 @@ class Reminders extends ChangeNotifier {
         title: item.title,
         body: item.body,
         scheduledDate: tz.TZDateTime.from(item.at, tz.UTC),
-        notificationDetails: _details(item.kind, language),
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        notificationDetails: item.prayer ? _adhanDetails(language) : _details(item.kind, language),
+        androidScheduleMode: item.prayer && exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle,
       );
     }
   }
@@ -171,9 +238,9 @@ class Reminders extends ChangeNotifier {
   List<_Due> _plan(PrayerTimes calculator, DateTime now, String language) {
     String t(String key, [Map<String, Object> values = const {}]) => Strings.of(language, key, values);
     final due = <_Due>[];
-    void add(ReminderKind kind, DateTime at, String title, String body) {
-      if (kinds.contains(kind) && at.isAfter(now.add(const Duration(minutes: 1)))) {
-        due.add(_Due(kind, at, title, body));
+    void add(ReminderKind kind, DateTime at, String title, String body, {bool prayer = false}) {
+      if ((prayer || kinds.contains(kind)) && at.isAfter(now.add(const Duration(minutes: 1)))) {
+        due.add(_Due(kind, at, title, body, prayer: prayer));
       }
     }
 
@@ -183,6 +250,12 @@ class Reminders extends ChangeNotifier {
       final day = calculator.forDate(date);
       final next = calculator.forDate(date.add(const Duration(days: 1)));
       final night = next.fajr.difference(day.maghrib);
+      if (adhan) {
+        // Worked out from the reader's own city, so it sounds at their local prayer time wherever they live.
+        for (final (key, at) in [('fajr', day.fajr), ('dhuhr', day.dhuhr), ('asr', day.asr), ('maghrib', day.maghrib), ('isha', day.isha)]) {
+          add(ReminderKind.afterFajr, at, t('prayer_$key'), t('adhan_body', {'city': city?.name ?? ''}), prayer: true);
+        }
+      }
       add(ReminderKind.afterFajr, day.fajr.add(const Duration(minutes: 15)), t('rem_fajr_title'), t('rem_fajr_body'));
       add(ReminderKind.evening, day.asr.add(const Duration(minutes: 15)), t('rem_evening_title'), t('rem_evening_body'));
       // The last third of the night, from Maghrib to the next Fajr.
@@ -208,6 +281,27 @@ class Reminders extends ChangeNotifier {
     return due;
   }
 
+  static const _adhanChannel = 'tz.or.iqraa.adhan';
+  static const _chapterId = 900001;
+
+  /// The adhan sound plays once and stops when the reader taps Stop, swipes it away or opens it.
+  NotificationDetails _adhanDetails(String language) {
+    return NotificationDetails(
+      android: AndroidNotificationDetails(
+        _adhanChannel,
+        Strings.of(language, 'channel_adhan'),
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: 'ic_notification',
+        sound: const RawResourceAndroidNotificationSound('adhan_short'),
+        category: AndroidNotificationCategory.reminder,
+        timeoutAfter: 60000,
+        actions: [AndroidNotificationAction('stop', Strings.of(language, 'stop'), cancelNotification: true)],
+      ),
+      iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: true, sound: 'adhan_short.caf'),
+    );
+  }
+
   NotificationDetails _details(ReminderKind kind, String language) {
     final (channel, key, importance) = switch (kind) {
       ReminderKind.tahajjud => ('tz.or.iqraa.tahajjud', 'channel_tahajjud', Importance.high),
@@ -222,10 +316,11 @@ class Reminders extends ChangeNotifier {
 }
 
 class _Due {
-  const _Due(this.kind, this.at, this.title, this.body);
+  const _Due(this.kind, this.at, this.title, this.body, {this.prayer = false});
 
   final ReminderKind kind;
   final DateTime at;
   final String title;
   final String body;
+  final bool prayer;
 }

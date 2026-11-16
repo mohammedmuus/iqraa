@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -9,25 +10,30 @@ import 'package:share_plus/share_plus.dart';
 
 import '../core/strings.dart';
 import '../theme.dart';
+import 'ask_scholar.dart';
 import 'ui.dart';
 
-/// Shows a verse or passage as an image card, then shares it, for example to a WhatsApp status.
-Future<void> sharePassage(BuildContext context, {required String arabic, required String translation, required String reference}) {
+/// Shows a verse or passage as an image card, then shares it, for example to a WhatsApp status. With a [link]
+/// to the passage, the sheet also offers to ask a scholar about it.
+Future<void> sharePassage(BuildContext context, {required String arabic, required String translation, required String reference, String? link}) {
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Palette.surface,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (_) => _ShareSheet(arabic: arabic, translation: translation, reference: reference),
+    builder: (_) => _ShareSheet(host: context, arabic: arabic, translation: translation, reference: reference, link: link),
   );
 }
 
 class _ShareSheet extends StatefulWidget {
-  const _ShareSheet({required this.arabic, required this.translation, required this.reference});
+  const _ShareSheet({required this.host, required this.arabic, required this.translation, required this.reference, this.link});
 
+  /// The reader screen, which stays open after this sheet closes.
+  final BuildContext host;
   final String arabic;
   final String translation;
   final String reference;
+  final String? link;
 
   @override
   State<_ShareSheet> createState() => _ShareSheetState();
@@ -81,6 +87,18 @@ class _ShareSheetState extends State<_ShareSheet> {
             ),
             const SizedBox(height: 14),
             SizedBox(width: width, child: BusyButton(label: context.t('share_now'), onPressed: _share)),
+            if (widget.link != null) ...[
+              const SizedBox(height: 14),
+              Text(context.t('ask_hint'), style: Theme.of(context).textTheme.bodySmall),
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  unawaited(askScholar(widget.host, reference: widget.reference, link: widget.link!));
+                },
+                icon: Icon(Icons.forum_outlined, size: 18, color: Palette.green),
+                label: Text(context.t('ask_scholar'), style: TextStyle(color: Palette.green, fontWeight: FontWeight.w600)),
+              ),
+            ],
           ],
         ),
       ),

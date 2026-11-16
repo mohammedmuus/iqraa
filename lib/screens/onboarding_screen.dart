@@ -79,12 +79,20 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   int _step = 0;
   bool _reminders = true;
+  bool _adhan = false;
 
   Future<void> _finish() async {
     final services = AppScope.read(context);
     await (await SharedPreferences.getInstance()).setBool(_doneKey, true);
-    if (_reminders && services.reminders.city != null && !services.reminders.enabled) {
-      await services.reminders.turnOn(services.prefs.language);
+    final reminders = services.reminders;
+    if ((_reminders || _adhan) && reminders.city != null && !reminders.enabled) {
+      if (!_reminders) {
+        await reminders.setKinds(const {}, services.prefs.language);
+      }
+      await reminders.turnOn(services.prefs.language);
+    }
+    if (_adhan && reminders.enabled) {
+      await reminders.setAdhan(true, services.prefs.language);
     }
     if (mounted) {
       Navigator.of(context).pop();
@@ -200,6 +208,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 value: _reminders,
                 title: Text(context.t('onb_reminders'), style: const TextStyle(fontSize: 14)),
                 onChanged: (value) => setState(() => _reminders = value),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                activeTrackColor: Palette.green,
+                value: _adhan,
+                title: Text(context.t('onb_adhan'), style: const TextStyle(fontSize: 14)),
+                subtitle: Text(context.t('adhan_note'), style: TextStyle(fontSize: 12, color: Palette.muted)),
+                onChanged: (value) => setState(() => _adhan = value),
               ),
             ],
           ),
