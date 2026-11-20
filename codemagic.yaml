@@ -42,9 +42,10 @@ workflows:
         script: |
           rm -rf build/ipa_unsigned && mkdir -p build/ipa_unsigned/Payload
           cp -R build/ios/iphoneos/Runner.app build/ipa_unsigned/Payload/
-          cd build/ipa_unsigned && zip -qry Iqraa-test.ipa Payload
+          # Named after the commit it was built from, so the installed copy can be matched to the code.
+          cd build/ipa_unsigned && zip -qry "Iqraa-${CM_COMMIT:0:7}.ipa" Payload
     artifacts:
-      - build/ipa_unsigned/Iqraa-test.ipa
+      - build/ipa_unsigned/*.ipa
 
   ios-testflight:
     name: iOS TestFlight
