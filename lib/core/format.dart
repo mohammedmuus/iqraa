@@ -4,6 +4,9 @@ final _whole = NumberFormat.decimalPattern('en');
 
 String whole(num value) => _whole.format(value);
 
+/// A dollar amount for display only: cents below 100 dollars, whole dollars above.
+String dollars(num value) => NumberFormat.currency(locale: 'en', symbol: 'USD ', decimalDigits: value < 100 ? 2 : 0).format(value);
+
 bool isOlder(String current, String minimum) {
   List<int> parts(String value) => value.split('+').first.split('.').map((part) => int.tryParse(part) ?? 0).toList();
   final a = parts(current);

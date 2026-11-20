@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 
@@ -79,6 +80,23 @@ class _SupportScreenState extends State<SupportScreen> {
     } on ApiException {
       return;
     }
+  }
+
+  String? _dollarGuide(BuildContext context) {
+    final rate = _usdRate(context);
+    final amount = int.tryParse(_amount.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    if (rate <= 0 || amount <= 0) {
+      return null;
+    }
+    return context.t('about_usd', {'amount': dollars(amount / rate)});
+  }
+
+  /// TZS per US dollar from Site settings, used only to show readers whose phone is set to a country outside
+  /// Tanzania a rough dollar amount. Every gift is still paid in TZS. Zero hides it.
+  double _usdRate(BuildContext context) {
+    final rate = (AppScope.of(context).config['usd_rate'] as num?)?.toDouble() ?? 0;
+    final country = (PlatformDispatcher.instance.locale.countryCode ?? '').toUpperCase();
+    return rate > 0 && country != 'TZ' ? rate : 0;
   }
 
   /// Loads one page of the reader's gifts, ten at a time, filtered by the search when one is typed.
@@ -222,7 +240,7 @@ class _SupportScreenState extends State<SupportScreen> {
                     keyboardType: TextInputType.number,
                     maxLength: 9,
                     onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(counterText: '', errorText: _fields['amount']),
+                    decoration: InputDecoration(counterText: '', errorText: _fields['amount'], helperText: _dollarGuide(context)),
                   ),
                   const SizedBox(height: 14),
                   Text(context.t('pay_with'), style: TextStyle(fontSize: 12.5, color: Palette.muted)),

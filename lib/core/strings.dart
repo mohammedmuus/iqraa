@@ -475,6 +475,7 @@ class Strings {
     'next_page': 'Next page',
     'no_results': 'Nothing matches. Try another word.',
     'back_to_top': 'Back to top',
+    'about_usd': 'About {amount}. You pay in TZS.',
   };
 
   static const _sw = {
@@ -943,6 +944,7 @@ class Strings {
     'next_page': 'Ukurasa unaofuata',
     'no_results': 'Hakuna kinacholingana. Jaribu neno lingine.',
     'back_to_top': 'Rudi juu',
+    'about_usd': 'Takriban {amount}. Unalipa kwa TZS.',
   };
 
   static const _ar = {
@@ -1411,6 +1413,7 @@ class Strings {
     'next_page': 'الصفحة التالية',
     'no_results': 'لا توجد نتائج مطابقة. جرّب كلمة أخرى.',
     'back_to_top': 'العودة إلى الأعلى',
+    'about_usd': 'حوالي {amount}. يتم الدفع بالشلن التنزاني.',
   };
 
   static bool has(String key) => _en.containsKey(key);
