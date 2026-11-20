@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'cities.dart';
 import 'prayer_times.dart';
+import 'reading_log.dart';
 import 'strings.dart';
 
 enum ReminderKind { afterFajr, evening, tahajjud, hourly, friday, fasting }
@@ -31,6 +33,20 @@ class Reminders extends ChangeNotifier {
 
   /// The opening takbirs of the adhan at each prayer time. Off until the reader turns it on.
   bool adhan = false;
+
+  /// A nudge every few hours to carry on from where the reader stopped. On unless turned off.
+  bool reading = true;
+  static const readingEvery = Duration(hours: 3);
+
+  /// No reading nudges between these hours on the phone's clock.
+  static const quietFrom = 22;
+  static const quietUntil = 6;
+  ReadingLog? log;
+  DateTime? _plannedAt;
+
+  /// Prayer times the reader typed in, as hour and minute on the phone's clock, by prayer name.
+  Map<String, (int, int)> overrides = {};
+  static const prayers = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
   String? cityId;
   PrayerMethod? _method;
   AsrMethod asr = AsrMethod.standard;
@@ -44,11 +60,82 @@ class Reminders extends ChangeNotifier {
     return place == null ? null : PrayerTimes(latitude: place.latitude, longitude: place.longitude, method: method, asr: asr);
   }
 
+  /// A day's prayer times with any the reader typed in put in place of the worked out ones.
+  PrayerDay? dayFor(DateTime date) {
+    final calculator = times;
+    if (calculator == null) {
+      return null;
+    }
+    final day = calculator.forDate(date);
+    DateTime pick(String key, DateTime worked) {
+      final typed = overrides[key];
+      if (typed == null) {
+        return worked;
+      }
+      final local = worked.toLocal();
+      return DateTime(local.year, local.month, local.day, typed.$1, typed.$2).toUtc();
+    }
+
+    return PrayerDay(
+      fajr: pick('fajr', day.fajr),
+      sunrise: pick('sunrise', day.sunrise),
+      dhuhr: pick('dhuhr', day.dhuhr),
+      asr: pick('asr', day.asr),
+      maghrib: pick('maghrib', day.maghrib),
+      isha: pick('isha', day.isha),
+    );
+  }
+
+  /// Today's times where the reader's city is.
+  PrayerDay? get today {
+    final calculator = times;
+    return calculator == null ? null : dayFor(calculator.localDate(DateTime.now()));
+  }
+
+  /// Sets the time of one prayer by hand, or with null goes back to the worked out time.
+  Future<void> setOverride(String prayer, (int, int)? time, String language) async {
+    if (!prayers.contains(prayer)) {
+      return;
+    }
+    if (time == null) {
+      overrides.remove(prayer);
+    } else {
+      overrides[prayer] = time;
+    }
+    await _changed(language);
+  }
+
+  Future<void> setReading(bool on, String language) async {
+    reading = on;
+    await _changed(language);
+  }
+
+  /// After the reader opens a chapter the next nudges move to a few hours from now. Planning runs
+  /// at most every 20 minutes, since every waiting reminder is replaced each time.
+  Future<void> readingMoved(String language) async {
+    final planned = _plannedAt;
+    if (!enabled || !reading || (planned != null && DateTime.now().difference(planned) < const Duration(minutes: 20))) {
+      return;
+    }
+    await schedule(language);
+  }
+
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     enabled = prefs.getBool('reminders_on') ?? false;
     promptDismissed = prefs.getBool('reminders_prompt_dismissed') ?? false;
     adhan = prefs.getBool('reminders_adhan') ?? false;
+    reading = prefs.getBool('reminders_reading') ?? true;
+    try {
+      final saved = jsonDecode(prefs.getString('reminders_times') ?? '{}') as Map;
+      overrides = {
+        for (final entry in saved.entries)
+          if (prayers.contains(entry.key) && entry.value is List && (entry.value as List).length == 2)
+            entry.key.toString(): (((entry.value as List)[0] as num).clamp(0, 23).toInt(), ((entry.value as List)[1] as num).clamp(0, 59).toInt()),
+      };
+    } on FormatException {
+      overrides = {};
+    }
     cityId = prefs.getString('reminders_city');
     final method = prefs.getString('reminders_method');
     _method = method == null ? null : PrayerMethod.values.where((value) => value.name == method).firstOrNull;
@@ -200,6 +287,8 @@ class Reminders extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('reminders_on', enabled);
     await prefs.setBool('reminders_adhan', adhan);
+    await prefs.setBool('reminders_reading', reading);
+    await prefs.setString('reminders_times', jsonEncode({for (final entry in overrides.entries) entry.key: [entry.value.$1, entry.value.$2]}));
     if (cityId != null) {
       await prefs.setString('reminders_city', cityId!);
     }
@@ -216,6 +305,7 @@ class Reminders extends ChangeNotifier {
       return;
     }
     await _init();
+    _plannedAt = DateTime.now();
     final now = DateTime.now().toUtc();
     final due = _plan(calculator, now, language)..sort((a, b) => a.at.compareTo(b.at));
     // Only waiting reminders are replaced, so alerts already on the screen stay.
@@ -229,7 +319,7 @@ class Reminders extends ChangeNotifier {
         title: item.title,
         body: item.body,
         scheduledDate: tz.TZDateTime.from(item.at, tz.UTC),
-        notificationDetails: item.prayer ? _adhanDetails(language) : _details(item.kind, language),
+        notificationDetails: item.prayer ? _adhanDetails(language) : (item.reading ? _readingDetails(language) : _details(item.kind, language)),
         androidScheduleMode: item.prayer && exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle,
       );
     }
@@ -238,17 +328,37 @@ class Reminders extends ChangeNotifier {
   List<_Due> _plan(PrayerTimes calculator, DateTime now, String language) {
     String t(String key, [Map<String, Object> values = const {}]) => Strings.of(language, key, values);
     final due = <_Due>[];
-    void add(ReminderKind kind, DateTime at, String title, String body, {bool prayer = false}) {
-      if ((prayer || kinds.contains(kind)) && at.isAfter(now.add(const Duration(minutes: 1)))) {
-        due.add(_Due(kind, at, title, body, prayer: prayer));
+    void add(ReminderKind kind, DateTime at, String title, String body, {bool prayer = false, bool reading = false}) {
+      if ((prayer || reading || kinds.contains(kind)) && at.isAfter(now.add(const Duration(minutes: 1)))) {
+        due.add(_Due(kind, at, title, body, prayer: prayer, reading: reading));
+      }
+    }
+
+    // Every few hours from the last reading, back to where the reader stopped, for the next two days.
+    final last = log?.last;
+    final lastAt = log?.lastAt;
+    if (reading && last != null && lastAt != null) {
+      final book = last['title'].toString();
+      final chapter = (last['chapter_title'] ?? '').toString();
+      final body = chapter.isEmpty ? t('rem_read_body_book', {'book': book}) : t('rem_read_body', {'book': book, 'chapter': chapter});
+      var at = lastAt.add(readingEvery);
+      final end = DateTime.now().add(const Duration(days: 2));
+      var count = 0;
+      while (at.isBefore(end) && count < 8) {
+        final local = at.toLocal();
+        if (local.hour >= quietUntil && local.hour < quietFrom) {
+          add(ReminderKind.hourly, at.toUtc(), t('rem_read_title'), body, reading: true);
+          count++;
+        }
+        at = at.add(readingEvery);
       }
     }
 
     final today = calculator.localDate(now);
     for (var offset = -1; offset < _days; offset++) {
       final date = today.add(Duration(days: offset));
-      final day = calculator.forDate(date);
-      final next = calculator.forDate(date.add(const Duration(days: 1)));
+      final day = dayFor(date)!;
+      final next = dayFor(date.add(const Duration(days: 1)))!;
       final night = next.fajr.difference(day.maghrib);
       if (adhan) {
         // Worked out from the reader's own city, so it sounds at their local prayer time wherever they live.
@@ -281,7 +391,8 @@ class Reminders extends ChangeNotifier {
     return due;
   }
 
-  static const _adhanChannel = 'tz.or.iqraa.adhan';
+  /// Made by MainActivity on Android with the adhan as its sound, so the sound cannot be lost.
+  static const _adhanChannel = 'tz.or.iqraa.adhan.sound';
   static const _chapterId = 900001;
 
   /// The adhan sound plays once and stops when the reader taps Stop, swipes it away or opens it.
@@ -302,6 +413,13 @@ class Reminders extends ChangeNotifier {
     );
   }
 
+  NotificationDetails _readingDetails(String language) {
+    return NotificationDetails(
+      android: AndroidNotificationDetails('tz.or.iqraa.reading', Strings.of(language, 'channel_reading'), icon: 'ic_notification'),
+      iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: true),
+    );
+  }
+
   NotificationDetails _details(ReminderKind kind, String language) {
     final (channel, key, importance) = switch (kind) {
       ReminderKind.tahajjud => ('tz.or.iqraa.tahajjud', 'channel_tahajjud', Importance.high),
@@ -316,11 +434,12 @@ class Reminders extends ChangeNotifier {
 }
 
 class _Due {
-  const _Due(this.kind, this.at, this.title, this.body, {this.prayer = false});
+  const _Due(this.kind, this.at, this.title, this.body, {this.prayer = false, this.reading = false});
 
   final ReminderKind kind;
   final DateTime at;
   final String title;
   final String body;
   final bool prayer;
+  final bool reading;
 }

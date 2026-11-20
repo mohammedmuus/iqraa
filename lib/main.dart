@@ -28,6 +28,7 @@ Future<void> main() async {
   await services.narration.loadLast();
   await services.dhikr.load();
   await services.reminders.load();
+  await services.readingLog.load();
   await services.rivals.load();
   if (Platform.isAndroid || Platform.isIOS) {
     await Workmanager().initialize(rivalsDispatcher);

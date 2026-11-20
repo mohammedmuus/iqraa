@@ -1,5 +1,10 @@
 package tz.or.iqraa
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.media.AudioAttributes
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import com.google.android.play.core.integrity.IntegrityManagerFactory
 import com.google.android.play.core.integrity.IntegrityTokenRequest
@@ -14,6 +19,36 @@ class MainActivity : AudioServiceFragmentActivity() {
         super.onCreate(savedInstanceState)
         // Ignore taps while another app draws over this one, so a hidden overlay cannot press buttons.
         window.decorView.filterTouchesWhenObscured = true
+        adhanChannel()
+    }
+
+    // The adhan channel is made here, pointing straight at the sound file, so release builds can never
+    // lose the sound and fall back to the phone's default tone. A channel's sound cannot change once
+    // made, so the first channel, which some phones made with the default tone, is removed.
+    private fun adhanChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return
+        }
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        manager.deleteNotificationChannel(OLD_ADHAN_CHANNEL)
+        if (manager.getNotificationChannel(ADHAN_CHANNEL) != null) {
+            return
+        }
+        val sound = Uri.parse("android.resource://$packageName/${R.raw.adhan_short}")
+        val attributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        val channel = NotificationChannel(ADHAN_CHANNEL, "Adhan", NotificationManager.IMPORTANCE_HIGH)
+        channel.setSound(sound, attributes)
+        channel.enableVibration(true)
+        manager.createNotificationChannel(channel)
+    }
+
+    companion object {
+        // Also named in lib/core/reminders.dart.
+        const val ADHAN_CHANNEL = "tz.or.iqraa.adhan.sound"
+        const val OLD_ADHAN_CHANNEL = "tz.or.iqraa.adhan"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

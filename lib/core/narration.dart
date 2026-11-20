@@ -70,23 +70,55 @@ class Narration extends ChangeNotifier {
 
   bool isCurrent(String? chapterId) => chapterId != null && chapter?['id'] == chapterId;
 
+  /// The Quran reciter the listener picked, by name. Null plays the first one recorded.
+  String? reciter;
+
+  /// The reciters recorded for a chapter, in the order the server lists them.
+  static List<String> reciters(Map<String, dynamic> chapter) => [
+        for (final row in (chapter['audio'] as List? ?? const []))
+          if ((row as Map)['language'] == 'ar' && (row['narrator'] ?? '').toString().isNotEmpty) row['narrator'].toString(),
+      ];
+
   /// The narration to play: the reader's language when recorded, otherwise the Arabic recitation, otherwise any.
-  static Map<String, dynamic>? pickTrack(Map<String, dynamic> chapter, String language) {
+  /// Among Arabic recitations the chosen [reciter] wins when this chapter has one by them.
+  static Map<String, dynamic>? pickTrack(Map<String, dynamic> chapter, String language, {String? reciter}) {
     final tracks = [for (final row in (chapter['audio'] as List? ?? const [])) Map<String, dynamic>.from(row as Map)];
     if (tracks.isEmpty) {
       return null;
     }
-    return tracks.where((t) => t['language'] == language).firstOrNull ?? tracks.where((t) => t['language'] == 'ar').firstOrNull ?? tracks.first;
+    Map<String, dynamic>? arabic() => tracks.where((t) => t['language'] == 'ar' && t['narrator'] == reciter).firstOrNull ?? tracks.where((t) => t['language'] == 'ar').firstOrNull;
+    if (language == 'ar') {
+      return arabic() ?? tracks.first;
+    }
+    return tracks.where((t) => t['language'] == language).firstOrNull ?? arabic() ?? tracks.first;
   }
 
   Future<void> loadLast() async {
-    final saved = (await SharedPreferences.getInstance()).getString('last_listened');
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('last_listened');
     lastListened = saved == null ? null : Map<String, dynamic>.from(jsonDecode(saved) as Map);
+    reciter = prefs.getString('reciter');
     notifyListeners();
   }
 
+  /// Switches the Quran reciter. A recitation already playing carries on with the new voice from the same ayah.
+  Future<void> setReciter(String name, {required String language}) async {
+    reciter = name;
+    notifyListeners();
+    await (await SharedPreferences.getInstance()).setString('reciter', name);
+    final current = chapter;
+    if (current == null || track?['language'] != 'ar' || track?['narrator'] == name) {
+      return;
+    }
+    final ayah = paragraphId;
+    await start(current, bookTitle: bookTitle, language: language);
+    if (ayah != null && canRepeat(ayah)) {
+      await seekParagraph(ayah);
+    }
+  }
+
   Future<void> start(Map<String, dynamic> data, {required String bookTitle, required String language, Duration? from}) async {
-    final picked = pickTrack(data, language);
+    final picked = pickTrack(data, language, reciter: reciter);
     if (picked == null) {
       return;
     }
@@ -103,7 +135,7 @@ class Narration extends ChangeNotifier {
     ]..sort((a, b) => a.$1.compareTo(b.$1));
     notifyListeners();
     final tag = MediaItem(
-      id: '${data['id']}-${picked['language']}',
+      id: '${data['id']}-${picked['language']}-${picked['narrator'] ?? ''}',
       title: (data['title'] ?? '').toString(),
       album: bookTitle,
       artist: (picked['narrator'] ?? '').toString(),

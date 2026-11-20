@@ -79,25 +79,61 @@ class _ReaderScreenState extends State<ReaderScreen> {
       for (final paragraph in _paragraphs) {
         final box = _keys[paragraph['id'].toString()]?.currentContext?.findRenderObject();
         if (box is RenderBox && box.attached && box.localToGlobal(Offset.zero).dy + box.size.height > 120) {
-          unawaited(AppScope.read(context).prefs.rememberPlace(widget.chapterId, (paragraph['number'] as num).toInt()));
+          final services = AppScope.read(context);
+          final number = (paragraph['number'] as num).toInt();
+          unawaited(services.prefs.rememberPlace(widget.chapterId, number));
+          final bookId = (_chapter!['book'] as Map?)?['id']?.toString();
+          if (bookId != null) {
+            unawaited(services.readingLog.reached(bookId, widget.chapterId, number));
+          }
           return;
         }
       }
     });
   }
 
-  /// A small finish moment the first time the reader reaches the end of a long chapter.
+  /// Counts the chapter as read once the reader reaches its end, with a small finish moment for a long one.
   void _watchEnd() {
     if (_finished || !_scroll.hasClients || _chapter == null) {
       return;
     }
     final position = _scroll.position;
-    if (position.maxScrollExtent > 600 && position.pixels >= position.maxScrollExtent - 24) {
-      _finished = true;
+    if (position.pixels >= position.maxScrollExtent - 24) {
+      _markRead(celebrateIt: position.maxScrollExtent > 600);
+    }
+  }
+
+  Timer? _shortRead;
+
+  /// A chapter short enough to fit on the screen has no end to scroll to, so a short stay counts as reading it.
+  void _watchShort() {
+    _shortRead?.cancel();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _scroll.hasClients && _scroll.position.maxScrollExtent < 24) {
+        _shortRead = Timer(const Duration(seconds: 8), () {
+          if (mounted) {
+            _markRead(celebrateIt: false);
+          }
+        });
+      }
+    });
+  }
+
+  void _markRead({required bool celebrateIt}) {
+    if (_finished) {
+      return;
+    }
+    _finished = true;
+    final services = AppScope.read(context);
+    final chapterId = _chapter!['id'].toString();
+    final bookId = (_chapter!['book'] as Map?)?['id']?.toString();
+    if (bookId != null) {
+      unawaited(services.readingLog.finished(bookId, chapterId, _paragraphs.length));
+    }
+    if (celebrateIt) {
       HapticFeedback.mediumImpact();
       unawaited(celebrate(context, context.t('chapter_done'), body: context.t('chapter_done_body')));
-      final services = AppScope.read(context);
-      unawaited(services.reminders.chapterFinished(_chapter!['id'].toString(), (_chapter!['title'] ?? '').toString(), services.prefs.language));
+      unawaited(services.reminders.chapterFinished(chapterId, (_chapter!['title'] ?? '').toString(), services.prefs.language));
     }
   }
 
@@ -115,6 +151,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   void dispose() {
     narration.removeListener(_follow);
     _placeSoon?.cancel();
+    _shortRead?.cancel();
     _scroll.dispose();
     super.dispose();
   }
@@ -178,6 +215,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
       }
       final book = Map<String, dynamic>.from(data['book'] as Map);
       unawaited(services.prefs.remember(book: book['id'].toString(), bookTitle: book['title'].toString(), chapter: data['id'].toString(), chapterTitle: (data['title'] ?? '').toString()));
+      unawaited(services.readingLog
+          .opened(
+            bookId: book['id'].toString(),
+            bookTitle: book['title'].toString(),
+            quran: book['quran'] == true,
+            chapterId: data['id'].toString(),
+            chapterTitle: (data['title'] ?? '').toString(),
+            total: widget.total,
+          )
+          .then((_) => services.reminders.readingMoved(services.prefs.language)));
+      _watchShort();
       if (services.session.signedIn) {
         // Reading progress follows the reader to other devices. A failed save is retried on the next chapter.
         unawaited(services.api
@@ -308,6 +356,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (playingHere && narration.repeat != null) _Repeating(narration: narration),
+                    if (Narration.reciters(chapter).length > 1) _ReciterChoice(chapter: chapter),
                     PlayerBar(chapter: chapter, bookTitle: widget.bookTitle),
                   ],
                 ),
@@ -567,7 +616,7 @@ class _Paragraph extends StatelessWidget {
                   key: ValueKey('${translation ?? 'ar'}/${mode.name}/${text.isEmpty}'),
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (showArabic) ArabicText((paragraph['arabic'] ?? '').toString(), size: 25 * scale, height: 1.85, color: look.ink),
+                    if (showArabic) ArabicText((paragraph['arabic'] ?? '').toString(), size: 25 * scale, height: 1.85, color: look.ink, number: (paragraph['number'] as num?)?.toInt()),
                     if (showArabic && showTranslation) const SizedBox(height: 4),
                     if (showTranslation)
                       Text(
@@ -586,6 +635,57 @@ class _Paragraph extends StatelessWidget {
                 child: _Action(icon: Icons.ios_share_rounded, label: context.t('share_image'), onTap: onShare),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Which reciter plays the Quran, with a sheet to pick another. Shown when a surah has more than one.
+class _ReciterChoice extends StatelessWidget {
+  const _ReciterChoice({required this.chapter});
+
+  final Map<String, dynamic> chapter;
+
+  @override
+  Widget build(BuildContext context) {
+    final services = AppScope.of(context);
+    final narration = services.narration;
+    final names = Narration.reciters(chapter);
+    final current = names.contains(narration.reciter) ? narration.reciter! : names.first;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: ActionChip(
+          avatar: Icon(Icons.record_voice_over_outlined, size: 16, color: Palette.green),
+          label: Text(context.t('reciter_name', {'name': current}), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5)),
+          onPressed: () async {
+            final picked = await showModalBottomSheet<String>(
+              context: context,
+              backgroundColor: Palette.surface,
+              showDragHandle: true,
+              builder: (sheet) => SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 8), child: Text(context.t('choose_reciter'), style: Theme.of(context).textTheme.titleSmall)),
+                    for (final name in names)
+                      ListTile(
+                        title: Text(name, style: const TextStyle(fontSize: 14)),
+                        trailing: name == current ? Icon(Icons.check_rounded, color: Palette.green) : null,
+                        onTap: () => Navigator.of(sheet).pop(name),
+                      ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+            );
+            if (picked != null && picked != current) {
+              await narration.setReciter(picked, language: services.prefs.language);
+            }
+          },
         ),
       ),
     );

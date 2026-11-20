@@ -9,6 +9,7 @@ import 'downloads.dart';
 import 'lamp.dart';
 import 'narration.dart';
 import 'prefs.dart';
+import 'reading_log.dart';
 import 'reminders.dart';
 import 'rivals.dart';
 import 'session.dart';
@@ -20,7 +21,8 @@ class AppServices {
     downloads = Downloads(api);
     dhikr = DhikrStore(api, cache, session);
     rivals = Rivals(api, session);
-    changes = Listenable.merge([session, prefs, downloads, narration, dhikr, reminders, rivals, giving]);
+    reminders.log = readingLog;
+    changes = Listenable.merge([session, prefs, downloads, narration, dhikr, reminders, rivals, giving, readingLog]);
     prefs.addListener(_languageChanged);
     session.addListener(_sessionChanged);
   }
@@ -50,6 +52,7 @@ class AppServices {
   final ReadingPrefs prefs;
   final Narration narration = Narration();
   final Reminders reminders = Reminders();
+  final ReadingLog readingLog = ReadingLog();
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   final GlobalKey<ScaffoldMessengerState> messengerKey = GlobalKey<ScaffoldMessengerState>();
   late final Api api;
@@ -87,11 +90,13 @@ class AppServices {
       if (saved == null) {
         return;
       }
-      final files = {for (final entry in (saved['audio'] as List? ?? const [])) (entry as Map)['language']: entry['file']};
+      // Matched by language and reader, since the Quran can have several reciters and only one is saved.
+      String key(Map audio) => '${audio['language']}|${audio['narrator'] ?? ''}';
+      final files = {for (final entry in (saved['audio'] as List? ?? const [])) key(entry as Map): entry['file']};
       for (final entry in (data['audio'] as List? ?? const [])) {
         final audio = entry as Map;
-        if (files[audio['language']] != null) {
-          audio['file'] = files[audio['language']];
+        if (files[key(audio)] != null) {
+          audio['file'] = files[key(audio)];
         }
       }
     }

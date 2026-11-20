@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/api.dart';
 import '../core/layout.dart';
+import '../core/reading_log.dart';
 import '../core/scope.dart';
 import '../core/strings.dart';
 import '../theme.dart';
@@ -222,6 +223,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _Featured(book: _shelf[_shown], position: _shown, total: _shelf.length, onStep: _step),
             if (_shelf.isNotEmpty) _Summary(book: _shelf[_shown], onListen: widget.onListen),
             if (prefs.lastRead != null) _ContinueReading(lastRead: prefs.lastRead!),
+            if (services.readingLog.inProgress().isNotEmpty) _InProgress(log: services.readingLog),
             _Heading(first: context.t('featured_a'), second: context.t('featured_b'), onSeeAll: widget.onLibrary),
             AdaptiveGrid(
               minTileWidth: 150,
@@ -449,6 +451,108 @@ class _LanguageDot extends StatelessWidget {
             border: Border.all(color: active ? Palette.green : Palette.line),
           ),
           child: Text(code, style: TextStyle(fontSize: 11, fontWeight: active ? FontWeight.w600 : FontWeight.w500, color: active ? Palette.green : Palette.body)),
+        ),
+      ),
+    );
+  }
+}
+
+/// Books under way with how far the reader has come, and the days in a row they have read.
+class _InProgress extends StatelessWidget {
+  const _InProgress({required this.log});
+
+  final ReadingLog log;
+
+  @override
+  Widget build(BuildContext context) {
+    final books = log.inProgress();
+    final streak = log.streak;
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Panel(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text(context.t('in_progress'), style: Theme.of(context).textTheme.titleSmall)),
+                if (streak > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(color: Palette.greenSoft, borderRadius: BorderRadius.circular(999)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.local_fire_department_outlined, size: 14, color: Palette.green),
+                        const SizedBox(width: 4),
+                        Text(context.t(streak == 1 ? 'streak_day' : 'streak_days', {'n': streak}), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Palette.green)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            if (streak > 0 && !log.readToday)
+              Padding(padding: const EdgeInsets.only(top: 4), child: Text(context.t('streak_keep'), style: TextStyle(fontSize: 11.5, color: Palette.muted))),
+            const SizedBox(height: 6),
+            for (final book in books) _ProgressRow(book: book),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProgressRow extends StatelessWidget {
+  const _ProgressRow({required this.book});
+
+  final Map<String, dynamic> book;
+
+  @override
+  Widget build(BuildContext context) {
+    final quran = book['quran'] == true;
+    final done = (book['done'] as List? ?? const []).length;
+    final total = (book['total'] as num?)?.toInt() ?? 0;
+    final ayat = (book['ayat'] as num?)?.toInt() ?? 0;
+    final parts = [
+      if (total > 0) context.t(quran ? 'surahs_of' : 'chapters_of', {'n': done, 'total': total}) else context.t(quran ? 'surahs_n' : 'chapters_n', {'n': done}),
+      if (quran && ayat > 0) context.t('ayat_read', {'n': ayat}),
+    ];
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => ReaderScreen(
+          chapterId: book['chapter'].toString(),
+          bookTitle: book['title'].toString(),
+          total: total,
+          startAt: (book['paragraph'] as num?)?.toInt(),
+        ),
+      )),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text(book['title'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Palette.ink))),
+                Icon(Icons.chevron_right_rounded, size: 18, color: Palette.muted),
+              ],
+            ),
+            Text((book['chapter_title'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: Palette.muted)),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: total > 0 ? (done / total).clamp(0.0, 1.0) : 0.0),
+                duration: const Duration(milliseconds: 600),
+                curve: Curves.easeOutCubic,
+                builder: (_, value, _) => LinearProgressIndicator(value: value, minHeight: 5, backgroundColor: Palette.canvas),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(parts.join('  |  '), style: TextStyle(fontSize: 11, color: Palette.body)),
+          ],
         ),
       ),
     );

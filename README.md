@@ -58,8 +58,9 @@ Narration keeps playing with the screen off, with controls on the lock screen. I
 - After the first sign in the app offers fingerprint or face unlock, asked again after 5 minutes in the background.
 - Reading progress and bookmarks follow the reader to every device. Dhikr counts are kept on the phone and sent when signed in.
 - Account, Close account deletes the account, as both stores require.
-- Android: card gifts open CRDB's page in a Custom Tab; mobile money sends the PIN prompt from the app.
-- iPhone: card gifts open CRDB's page in Safari; mobile money opens the website's giving page in Safari (App Store guideline 3.2.2).
+- Payments go through AzamPay, for cards and for Mixx by Yas, Airtel Money and HaloPesa.
+- Android: card gifts open AzamPay's card page in a Custom Tab; mobile money sends the PIN prompt from the app.
+- iPhone: card gifts open AzamPay's card page in Safari; mobile money opens the website's giving page in Safari (App Store guideline 3.2.2).
 - After paying, the thank you page returns to the app through `iqraa://donation/REF` and the gift screen follows the payment until it is confirmed.
 
 ## Release builds
@@ -120,7 +121,7 @@ Rename `build\app\outputs\flutter-apk\app-release.apk` to `iqraa.apk` and attach
 
 ## Store review notes
 
-- Give reviewers a demo account in the review notes, and keep CRDB in test mode and CashPay in practice mode during review.
-- Review notes: "Iqraa is a free library of classical Islamic books with Kiswahili and English translations and narration. Donations go to [REGISTERED NONPROFIT NAME], a registered nonprofit in Tanzania. Card payments open CRDB Bank's secure page in the browser; the app never sees card details. Accounts can be closed under Account, Close account."
+- Give reviewers a demo account in the review notes, and keep AzamPay in sandbox mode (Site settings) during review.
+- Review notes: "Iqraa is a free library of classical Islamic books with Kiswahili and English translations and narration. Donations go to [REGISTERED NONPROFIT NAME], a registered nonprofit in Tanzania. Card payments open AzamPay's secure page in the browser; the app never sees card details. Accounts can be closed under Account, Close account."
 - Google Play: send the nonprofit registration and tax exemption letter in the Payments policy declaration, because donations do not use Play billing.
 - Data safety and privacy labels: email, name, purchase history (gifts), app activity (reading progress, bookmarks, dhikr counts) and device identifiers for security checks. Not sold, not used for tracking, encrypted in transit, deletable in the app and at `/close-account/`. Privacy policy: `/privacy/`.

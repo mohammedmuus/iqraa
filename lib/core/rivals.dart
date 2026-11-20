@@ -102,12 +102,19 @@ class Rivals extends ChangeNotifier {
     final firstLook = seen['week'] != week;
     final language = prefs.getString('language') ?? 'en';
     final now = <String, List<String>>{};
+    // Groups already told this week that they reached their goal.
+    final goalsMet = seen['week'] == week ? List<String>.from(seen['goals'] as List? ?? const []) : <String>[];
     final groups = [for (final row in (data['groups'] as List? ?? const [])) Map<String, dynamic>.from(row as Map)];
     for (var index = 0; index < groups.length; index++) {
       final group = groups[index];
       final id = group['id'].toString();
       final ahead = [for (final row in (group['ahead'] as List? ?? const [])) Map<String, dynamic>.from(row as Map)];
       now[id] = [for (final row in ahead) row['key'].toString()];
+      final goal = (group['goal'] as num?)?.toInt() ?? 0;
+      if (goal > 0 && ((group['group_total'] as num?)?.toInt() ?? 0) >= goal && !goalsMet.contains(id)) {
+        goalsMet.add(id);
+        await _show(_firstId + 100 + index, language, Strings.of(language, 'goal_title'), Strings.of(language, 'goal_body', {'group': group['name'].toString(), 'goal': goal}));
+      }
       final previous = before[id] as List?;
       if (firstLook || previous == null) {
         continue;
@@ -117,7 +124,7 @@ class Rivals extends ChangeNotifier {
         await _notify(_firstId + index, language, group, passed);
       }
     }
-    await prefs.setString(_seenKey, jsonEncode({'week': week, 'groups': now}));
+    await prefs.setString(_seenKey, jsonEncode({'week': week, 'groups': now, 'goals': goalsMet}));
     return groups.length;
   }
 
@@ -128,6 +135,11 @@ class Rivals extends ChangeNotifier {
         ? t('rival_title', {'name': first['name'].toString()})
         : t('rival_title_many', {'name': first['name'].toString(), 'n': passed.length - 1});
     final body = t('rival_body', {'group': group['name'].toString(), 'theirs': first['total'] ?? 0, 'mine': group['you'] ?? 0});
+    await _show(id, language, title, body);
+  }
+
+  static Future<void> _show(int id, String language, String title, String body) async {
+    String t(String key) => Strings.of(language, key);
     final plugin = FlutterLocalNotificationsPlugin();
     await plugin.initialize(
       settings: const InitializationSettings(

@@ -207,12 +207,31 @@ class _SupportScreenState extends State<SupportScreen> {
                   const SizedBox(height: 14),
                   Text(context.t('pay_with'), style: TextStyle(fontSize: 12.5, color: Palette.muted)),
                   const SizedBox(height: 8),
-                  Segmented<String>(
-                    height: 38,
-                    options: [('card', context.t('card')), ('mobile', context.t('mobile_money'))],
-                    value: _method,
-                    onChanged: (value) => setState(() => _method = value),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _Method(
+                          label: context.t('card'),
+                          logos: const ['visa', 'mastercard', 'azampay'],
+                          selected: _method == 'card',
+                          onTap: () => setState(() => _method = 'card'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _Method(
+                          label: context.t('pay_mobile'),
+                          logos: const ['mixx', 'airtel', 'halopesa'],
+                          selected: _method == 'mobile',
+                          onTap: () => setState(() => _method = 'mobile'),
+                        ),
+                      ),
+                    ],
                   ),
+                  if (_method == 'mobile') ...[
+                    const SizedBox(height: 6),
+                    Text(context.t('mobile_money'), style: TextStyle(fontSize: 11.5, color: Palette.muted)),
+                  ],
                   if (_method == 'mobile') ...[
                     const SizedBox(height: 12),
                     Field(label: context.t('phone'), controller: _phone, error: _fields['phone'], keyboard: TextInputType.phone, maxLength: 16, hints: const [AutofillHints.telephoneNumber]),
@@ -311,6 +330,77 @@ class _CampaignCard extends StatelessWidget {
           const SizedBox(height: 10),
           Pill(label: context.t('give_now'), dark: false, onTap: onGive),
         ],
+      ),
+    );
+  }
+}
+
+/// A payment choice: a small label with the logos of what it takes.
+class _Method extends StatelessWidget {
+  const _Method({required this.label, required this.logos, required this.selected, required this.onTap});
+
+  final String label;
+  final List<String> logos;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: Material(
+        color: selected ? Palette.greenSoft : Palette.canvas,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: selected ? Palette.green : Colors.transparent, width: 1.4),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Palette.ink)),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [for (final logo in logos) PayLogo(logo)]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A payment logo from assets/pay. Until the official file is in place the name shows instead.
+class PayLogo extends StatelessWidget {
+  const PayLogo(this.name, {super.key});
+
+  final String name;
+
+  static const _names = {
+    'visa': 'Visa',
+    'mastercard': 'Mastercard',
+    'azampay': 'AzamPay',
+    'mixx': 'Mixx by Yas',
+    'airtel': 'Airtel Money',
+    'halopesa': 'HaloPesa',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      'assets/pay/$name.png',
+      height: 16,
+      semanticLabel: _names[name],
+      errorBuilder: (_, _, _) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: Palette.surface, borderRadius: BorderRadius.circular(6)),
+        child: Text(_names[name] ?? name, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Palette.body)),
       ),
     );
   }

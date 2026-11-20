@@ -675,6 +675,7 @@ class BoardList extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (rows[i]['change'] is num && rows[i]['change'] != 0) _Move((rows[i]['change'] as num).toInt()),
                   Text(whole((rows[i]['total'] as num?) ?? 0), style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Palette.ink)),
                 ],
               ),
@@ -887,6 +888,93 @@ Future<void> joinGroup(NavigatorState navigator, AppServices services, String co
   }
 }
 
+/// Places moved on the group board since yesterday: up in green, down in a muted red.
+class _Move extends StatelessWidget {
+  const _Move(this.places);
+
+  final int places;
+
+  @override
+  Widget build(BuildContext context) {
+    final up = places > 0;
+    final colour = up ? Palette.green : const Color(0xFFB4533C);
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(end: 10),
+      child: Semantics(
+        label: context.t(up ? 'moved_up' : 'moved_down', {'n': places.abs()}),
+        excludeSemantics: true,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(up ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 13, color: colour),
+            Text('${places.abs()}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: colour)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The group's weekly goal with how far the members have come together.
+class _GroupGoal extends StatelessWidget {
+  const _GroupGoal({required this.goal, required this.total, required this.owner, required this.onSet});
+
+  final int goal;
+  final int total;
+  final bool owner;
+  final VoidCallback onSet;
+
+  @override
+  Widget build(BuildContext context) {
+    if (goal <= 0 && !owner) {
+      return const SizedBox.shrink();
+    }
+    final reached = goal > 0 && total >= goal;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Panel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    goal > 0 ? context.t('group_goal_progress', {'total': whole(total), 'goal': whole(goal)}) : context.t('group_goal_none'),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Palette.ink),
+                  ),
+                ),
+                if (owner)
+                  TextButton(
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    onPressed: onSet,
+                    child: Text(context.t(goal > 0 ? 'group_goal_change' : 'group_goal_set'), style: TextStyle(fontSize: 12.5, color: Palette.green, fontWeight: FontWeight.w600)),
+                  ),
+              ],
+            ),
+            if (goal > 0) ...[
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: (total / goal).clamp(0.0, 1.0)),
+                  duration: const Duration(milliseconds: 700),
+                  curve: Curves.easeOutCubic,
+                  builder: (_, value, _) => LinearProgressIndicator(value: value, minHeight: 7, backgroundColor: Palette.canvas),
+                ),
+              ),
+              if (reached) ...[
+                const SizedBox(height: 6),
+                Text(context.t('group_goal_reached'), style: TextStyle(fontSize: 12, color: Palette.green, fontWeight: FontWeight.w600)),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class GroupBoardScreen extends StatefulWidget {
   const GroupBoardScreen({super.key, required this.group});
 
@@ -900,6 +988,43 @@ class _GroupBoardScreenState extends State<GroupBoardScreen> {
   String _week = 'current';
   Map<String, dynamic>? _board;
   Object? _error;
+  late int _goal = (widget.group['weekly_goal'] as num?)?.toInt() ?? 0;
+
+  /// The group owner sets how much dhikr the group aims for together each week. 0 removes the goal.
+  Future<void> _setGoal() async {
+    final field = TextEditingController(text: _goal > 0 ? '$_goal' : '');
+    final value = await showDialog<int>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(context.t('group_goal_title')),
+        content: TextField(
+          controller: field,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          maxLength: 8,
+          decoration: InputDecoration(counterText: '', helperText: context.t('group_goal_help')),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialog).pop(), child: Text(context.t('cancel'))),
+          TextButton(onPressed: () => Navigator.of(dialog).pop(int.tryParse(field.text.trim()) ?? 0), child: Text(context.t('save'))),
+        ],
+      ),
+    );
+    field.dispose();
+    if (value == null || !mounted) {
+      return;
+    }
+    try {
+      final data = Map<String, dynamic>.from(await AppScope.read(context).api.post('dhikr/groups/${widget.group['id']}/goal', body: {'weekly_goal': value}, auth: true) as Map);
+      if (mounted) {
+        setState(() => _goal = (data['weekly_goal'] as num?)?.toInt() ?? 0);
+      }
+    } on ApiException catch (error) {
+      if (mounted) {
+        showMessage(context, context.describe(error));
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -954,8 +1079,16 @@ class _GroupBoardScreenState extends State<GroupBoardScreen> {
                 const SizedBox(height: 10),
                 if (_board == null)
                   LoadView(error: _error, onRetry: _load)
-                else
+                else ...[
+                  if (_week == 'current')
+                    _GroupGoal(
+                      goal: _goal,
+                      total: (_board!['group_total'] as num?)?.toInt() ?? 0,
+                      owner: widget.group['owner'] == true,
+                      onSet: _setGoal,
+                    ),
                   BoardList(rows: [for (final row in (_board!['rows'] as List? ?? const [])) Map<String, dynamic>.from(row as Map)]),
+                ],
               ],
             ),
           ),

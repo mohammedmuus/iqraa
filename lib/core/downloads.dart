@@ -3,9 +3,11 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
 import 'json_work.dart';
+import 'narration.dart';
 
 /// Books saved on the phone with their chapters and narration, so they read and play without internet.
 /// Everything lives in the app's private support folder. Only public library content is stored.
@@ -94,6 +96,8 @@ class Downloads extends ChangeNotifier {
     try {
       await Directory('${work.path}/chapters').create(recursive: true);
       final book = Map<String, dynamic>.from(await _retry(() => api.get('books/$bookId')) as Map);
+      // Only the chosen Quran reciter is saved, so a book does not take several times the space.
+      final reciter = (await SharedPreferences.getInstance()).getString('reciter');
       final chapters = [for (final row in (book['chapters'] as List? ?? const [])) Map<String, dynamic>.from(row as Map)];
       final total = chapters.isEmpty ? 1 : chapters.length;
       var done = 0;
@@ -107,10 +111,11 @@ class Downloads extends ChangeNotifier {
           final chapterId = data['id'].toString();
           final saved = File('${work.path}/chapters/$chapterId.json');
           if (!await saved.exists()) {
+            final recitation = Narration.pickTrack(data, 'ar', reciter: reciter);
             for (final entry in (data['audio'] as List? ?? const [])) {
               final audio = entry as Map;
               final url = (audio['url'] ?? '').toString();
-              if (url.isEmpty) {
+              if (url.isEmpty || (audio['language'] == 'ar' && recitation != null && audio['narrator'] != recitation['narrator'])) {
                 continue;
               }
               final name = 'audio/$chapterId-${audio['language']}${_extension(url)}';

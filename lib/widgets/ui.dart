@@ -58,10 +58,13 @@ class DisplayTitle extends StatelessWidget {
 }
 
 class ArabicText extends StatelessWidget {
-  const ArabicText(this.text, {super.key, this.size = 22, this.color, this.height = 1.7, this.align = TextAlign.right, this.maxLines});
+  const ArabicText(this.text, {super.key, this.size = 22, this.color, this.height = 1.7, this.align = TextAlign.right, this.maxLines, this.number});
 
   final String text;
   final double size;
+
+  /// When given, a ringed number in Arabic digits closes the passage, like an ayah marker.
+  final int? number;
 
   /// Ink unless given.
   final Color? color;
@@ -71,13 +74,52 @@ class ArabicText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
+    final style = TextStyle(fontFamily: AppTheme.arabic, fontSize: size, height: height, color: color ?? Palette.ink);
+    final mark = number;
+    if (mark == null) {
+      return Text(text, textDirection: TextDirection.rtl, textAlign: align, maxLines: maxLines, overflow: maxLines == null ? null : TextOverflow.ellipsis, style: style);
+    }
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: '$text '),
+          WidgetSpan(alignment: PlaceholderAlignment.middle, child: AyahMark(mark, size: size)),
+        ],
+      ),
       textDirection: TextDirection.rtl,
       textAlign: align,
       maxLines: maxLines,
       overflow: maxLines == null ? null : TextOverflow.ellipsis,
-      style: TextStyle(fontFamily: AppTheme.arabic, fontSize: size, height: height, color: color ?? Palette.ink),
+      style: style,
+    );
+  }
+}
+
+/// A small gold ring with a number in Arabic digits, closing a passage of Arabic text.
+class AyahMark extends StatelessWidget {
+  const AyahMark(this.number, {super.key, this.size = 22});
+
+  final int number;
+
+  /// The size of the Arabic text it sits in.
+  final double size;
+
+  static String digits(int value) => value.toString().split('').map((d) => '٠١٢٣٤٥٦٧٨٩'[int.parse(d)]).join();
+
+  @override
+  Widget build(BuildContext context) {
+    final height = size * 1.05;
+    return Semantics(
+      label: '$number',
+      excludeSemantics: true,
+      child: Container(
+        constraints: BoxConstraints(minWidth: height),
+        height: height,
+        padding: EdgeInsets.symmetric(horizontal: size * 0.18),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(border: Border.all(color: Palette.gold, width: 1.3), borderRadius: BorderRadius.circular(999)),
+        child: Text(digits(number), style: TextStyle(fontFamily: AppTheme.arabic, fontSize: size * 0.5, height: 1, color: Palette.green)),
+      ),
     );
   }
 }

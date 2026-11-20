@@ -38,7 +38,7 @@ class RemindersScreen extends StatelessWidget {
     final reminders = services.reminders;
     final language = services.prefs.language;
     final city = reminders.city;
-    final today = reminders.times?.forDate(reminders.times!.localDate(DateTime.now()));
+    final today = reminders.today;
     final labels = {
       ReminderKind.afterFajr: ('rem_kind_fajr', 'rem_kind_fajr_note'),
       ReminderKind.evening: ('rem_kind_evening', 'rem_kind_evening_note'),
@@ -118,6 +118,7 @@ class RemindersScreen extends StatelessWidget {
                       Text(context.t('today_times'), style: Theme.of(context).textTheme.titleSmall),
                       const SizedBox(height: 4),
                       Text(context.t('times_on_phone'), style: Theme.of(context).textTheme.bodySmall),
+                      Text(context.t('times_tap_to_change'), style: Theme.of(context).textTheme.bodySmall),
                       const SizedBox(height: 10),
                       Wrap(
                         spacing: 8,
@@ -131,7 +132,12 @@ class RemindersScreen extends StatelessWidget {
                             ('maghrib', today.maghrib),
                             ('isha', today.isha),
                           ])
-                            _Time(label: context.t('prayer_$key'), time: time),
+                            _Time(
+                              label: context.t('prayer_$key'),
+                              time: time,
+                              typed: reminders.overrides.containsKey(key),
+                              onTap: () => _changeTime(context, key, time),
+                            ),
                         ],
                       ),
                     ],
@@ -155,6 +161,14 @@ class RemindersScreen extends StatelessWidget {
                           await _switch(context, true);
                         }
                       },
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      activeTrackColor: Palette.green,
+                      value: reminders.reading,
+                      title: Text(context.t('rem_kind_reading'), style: const TextStyle(fontSize: 14)),
+                      subtitle: Text(context.t('rem_kind_reading_note'), style: TextStyle(fontSize: 12, color: Palette.muted)),
+                      onChanged: (value) => reminders.setReading(value, language),
                     ),
                     for (final kind in ReminderKind.values)
                       SwitchListTile(
@@ -301,27 +315,85 @@ class _CitySheetState extends State<_CitySheet> {
 }
 
 class _Time extends StatelessWidget {
-  const _Time({required this.label, required this.time});
+  const _Time({required this.label, required this.time, required this.onTap, this.typed = false});
 
   final String label;
   final DateTime time;
+  final VoidCallback onTap;
+
+  /// Set by the reader rather than worked out.
+  final bool typed;
 
   @override
   Widget build(BuildContext context) {
     final local = time.toLocal();
     final clock = '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-    return Container(
-      width: 92,
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-      decoration: BoxDecoration(color: Palette.canvas, borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: Palette.muted)),
-          const SizedBox(height: 2),
-          Text(clock, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Palette.ink)),
-        ],
+    return Material(
+      color: typed ? Palette.greenSoft : Palette.canvas,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          width: 92,
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: Palette.muted))),
+                  Icon(typed ? Icons.edit_rounded : Icons.edit_outlined, size: 12, color: typed ? Palette.green : Palette.muted),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(clock, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Palette.ink)),
+            ],
+          ),
+        ),
       ),
     );
+  }
+}
+
+/// Lets the reader type a prayer time by hand, or go back to the worked out time.
+Future<void> _changeTime(BuildContext context, String prayer, DateTime shown) async {
+  final services = AppScope.read(context);
+  final reminders = services.reminders;
+  final language = services.prefs.language;
+  if (reminders.overrides.containsKey(prayer)) {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Palette.surface,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(leading: const Icon(Icons.edit_outlined), title: Text(context.t('time_change')), onTap: () => Navigator.of(sheet).pop('change')),
+            ListTile(leading: const Icon(Icons.restore_rounded), title: Text(context.t('time_reset')), onTap: () => Navigator.of(sheet).pop('reset')),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice == 'reset') {
+      await reminders.setOverride(prayer, null, language);
+      return;
+    }
+    if (choice != 'change' || !context.mounted) {
+      return;
+    }
+  }
+  final local = shown.toLocal();
+  final picked = await showTimePicker(
+    context: context,
+    initialTime: TimeOfDay(hour: local.hour, minute: local.minute),
+    initialEntryMode: TimePickerEntryMode.input,
+    helpText: context.t('time_for', {'prayer': context.t('prayer_$prayer')}),
+    builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),
+  );
+  if (picked != null) {
+    await reminders.setOverride(prayer, (picked.hour, picked.minute), language);
   }
 }

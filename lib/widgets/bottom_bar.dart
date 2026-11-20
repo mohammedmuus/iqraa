@@ -182,7 +182,8 @@ class _Slot extends StatelessWidget {
                   fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                   height: 1.1,
                 ),
-                child: Text(item.label, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+                // A longer label, such as Dhikr & Groups, shrinks a little to fit rather than being cut short.
+                child: FittedBox(fit: BoxFit.scaleDown, child: Text(item.label, textAlign: TextAlign.center, maxLines: 1)),
               ),
             ),
           ],
