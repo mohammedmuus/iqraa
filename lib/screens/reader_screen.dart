@@ -69,6 +69,33 @@ class _ReaderScreenState extends State<ReaderScreen> {
   bool _finished = false;
   Timer? _placeSoon;
 
+  /// True once the page has moved off the top, which gives the pinned bar its background.
+  bool _scrolled = false;
+
+  /// True once the reader is more than a screen down, which shows the Back to top button.
+  bool _far = false;
+
+  void _watchTop() {
+    if (!_scroll.hasClients) {
+      return;
+    }
+    final offset = _scroll.offset;
+    final scrolled = offset > 8;
+    final far = offset > MediaQuery.sizeOf(context).height;
+    if (scrolled != _scrolled || far != _far) {
+      setState(() {
+        _scrolled = scrolled;
+        _far = far;
+      });
+    }
+  }
+
+  Future<void> _toTop() async {
+    if (_scroll.hasClients) {
+      await _scroll.animateTo(0, duration: const Duration(milliseconds: 450), curve: Curves.easeOutCubic);
+    }
+  }
+
   /// Saves the first paragraph on screen a moment after scrolling stops, so Continue reading opens there.
   void _watchPlace() {
     _placeSoon?.cancel();
@@ -142,7 +169,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
     super.initState();
     _scroll
       ..addListener(_watchEnd)
-      ..addListener(_watchPlace);
+      ..addListener(_watchPlace)
+      ..addListener(_watchTop);
     unawaited(_load());
     WidgetsBinding.instance.addPostFrameCallback((_) => narration.addListener(_follow));
   }
@@ -347,6 +375,31 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final base = Theme.of(context);
     final scaffold = Scaffold(
       backgroundColor: look.page,
+      floatingActionButton: IgnorePointer(
+        ignoring: !_far,
+        child: AnimatedScale(
+          scale: _far ? 1 : 0,
+          duration: const Duration(milliseconds: 200),
+          child: Tooltip(
+            message: context.t('back_to_top'),
+            child: Semantics(
+              button: true,
+              label: context.t('back_to_top'),
+              excludeSemantics: true,
+              child: Material(
+                color: Palette.surface,
+                elevation: 3,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: _toTop,
+                  child: SizedBox(width: 44, height: 44, child: Icon(Icons.vertical_align_top_rounded, size: 20, color: Palette.ink)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
       bottomNavigationBar: chapter != null && hasAudio
           ? SafeArea(
               minimum: const EdgeInsets.only(bottom: 12),
@@ -370,48 +423,67 @@ class _ReaderScreenState extends State<ReaderScreen> {
             child: CustomScrollView(
               controller: _scroll,
               slivers: [
-                SliverPadding(
-                  padding: padding.copyWith(top: 8),
-                  sliver: SliverList.list(
-                    children: [
-                      Row(
-                        children: [
-                          RoundButton(icon: Icons.arrow_back_rounded, label: context.t('back'), onTap: () => Navigator.of(context).maybePop()),
-                          Expanded(child: Text(position, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: look.muted))),
-                          RoundButton(icon: Icons.bookmark_border_rounded, label: context.t('bookmark'), onTap: _bookmark),
-                          const SizedBox(width: 6),
-                          Semantics(
-                            button: true,
-                            label: context.t('text_size'),
-                            excludeSemantics: true,
-                            child: Material(
-                              color: Palette.surface,
-                              shape: const CircleBorder(),
-                              child: InkWell(
-                                customBorder: const CircleBorder(),
-                                onTap: prefs.nextSize,
-                                child: SizedBox(width: 36, height: 36, child: Center(child: Text('Aa', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Palette.ink)))),
-                              ),
+                // The bar stays at the top while reading, so Back and the page settings are always in reach.
+                PinnedHeaderSliver(
+                  child: _TopBar(
+                    look: look,
+                    scrolled: _scrolled,
+                    padding: EdgeInsets.fromLTRB(padding.left, 8, padding.right, 8),
+                    child: Row(
+                      children: [
+                        RoundButton(icon: Icons.arrow_back_rounded, label: context.t('back'), onTap: () => Navigator.of(context).maybePop()),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              _scrolled && (chapter?['title'] ?? '').toString().isNotEmpty ? chapter!['title'].toString() : position,
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: _scrolled ? 13 : 11.5, fontWeight: _scrolled ? FontWeight.w600 : FontWeight.w400, color: _scrolled ? look.ink : look.muted),
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          RoundButton(
-                            icon: switch (prefs.theme) {
-                              ReaderTheme.light => Icons.light_mode_outlined,
-                              ReaderTheme.sepia => Icons.wb_twilight_outlined,
-                              ReaderTheme.night => Icons.dark_mode_outlined,
-                            },
-                            label: context.t('page_colour'),
-                            onTap: () async {
-                              await prefs.nextTheme();
-                              if (context.mounted) {
-                                showMessage(context, context.t('theme_${prefs.theme.name}'));
-                              }
-                            },
+                        ),
+                        RoundButton(icon: Icons.bookmark_border_rounded, label: context.t('bookmark'), onTap: _bookmark),
+                        const SizedBox(width: 6),
+                        Semantics(
+                          button: true,
+                          label: context.t('text_size'),
+                          excludeSemantics: true,
+                          child: Material(
+                            color: Palette.surface,
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: prefs.nextSize,
+                              child: SizedBox(width: 36, height: 36, child: Center(child: Text('Aa', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Palette.ink)))),
+                            ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
+                        ),
+                        const SizedBox(width: 6),
+                        RoundButton(
+                          icon: switch (prefs.theme) {
+                            ReaderTheme.light => Icons.light_mode_outlined,
+                            ReaderTheme.sepia => Icons.wb_twilight_outlined,
+                            ReaderTheme.night => Icons.dark_mode_outlined,
+                          },
+                          label: context.t('page_colour'),
+                          onTap: () async {
+                            await prefs.nextTheme();
+                            if (context.mounted) {
+                              showMessage(context, context.t('theme_${prefs.theme.name}'));
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: padding.copyWith(top: 0),
+                  sliver: SliverList.list(
+                    children: [
+                      const SizedBox(height: 6),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Column(
@@ -538,6 +610,30 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: prefs.theme == ReaderTheme.night ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       child: Theme(data: base.copyWith(textTheme: base.textTheme.apply(bodyColor: look.body, displayColor: look.ink)), child: scaffold),
+    );
+  }
+}
+
+/// The reader's top bar. Clear over the page at the top, then a solid strip with a hairline once the text
+/// scrolls under it.
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.look, required this.scrolled, required this.padding, required this.child});
+
+  final ReaderLook look;
+  final bool scrolled;
+  final EdgeInsets padding;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      padding: padding,
+      decoration: BoxDecoration(
+        color: scrolled ? look.page : look.page.withValues(alpha: 0),
+        border: Border(bottom: BorderSide(color: scrolled ? look.muted.withValues(alpha: 0.18) : look.muted.withValues(alpha: 0), width: 0.6)),
+      ),
+      child: child,
     );
   }
 }

@@ -33,6 +33,13 @@ class _SupportScreenState extends State<SupportScreen> {
   String? _campaign;
   List<Map<String, dynamic>> _campaigns = const [];
   List<Map<String, dynamic>>? _gifts;
+  final _giftSearch = TextEditingController();
+  Timer? _giftTyping;
+  int _giftPage = 1;
+  int _giftPages = 1;
+
+  /// Counts gift list requests, so an older answer arriving late never replaces a newer one.
+  int _giftRequest = 0;
   bool _wasSignedIn = false;
   String? _error;
   Map<String, String> _fields = const {};
@@ -48,7 +55,8 @@ class _SupportScreenState extends State<SupportScreen> {
     super.didChangeDependencies();
     final signedIn = AppScope.of(context).session.signedIn;
     if (signedIn && !_wasSignedIn) {
-      unawaited(_loadGifts());
+      _giftSearch.clear();
+      unawaited(_loadGifts(page: 1));
     }
     _wasSignedIn = signedIn;
   }
@@ -57,6 +65,8 @@ class _SupportScreenState extends State<SupportScreen> {
   void dispose() {
     _amount.dispose();
     _phone.dispose();
+    _giftSearch.dispose();
+    _giftTyping?.cancel();
     super.dispose();
   }
 
@@ -71,11 +81,21 @@ class _SupportScreenState extends State<SupportScreen> {
     }
   }
 
-  Future<void> _loadGifts() async {
+  /// Loads one page of the reader's gifts, ten at a time, filtered by the search when one is typed.
+  Future<void> _loadGifts({int? page}) async {
+    final request = ++_giftRequest;
+    final query = _giftSearch.text.trim();
     try {
-      final data = await AppScope.read(context).api.get('donations', auth: true) as Map;
-      if (mounted) {
-        setState(() => _gifts = [for (final row in (data['results'] as List? ?? const [])) Map<String, dynamic>.from(row as Map)]);
+      final data = await AppScope.read(context).api.get('donations', auth: true, query: {
+        'page': '${page ?? _giftPage}',
+        if (query.isNotEmpty) 'q': query,
+      }) as Map;
+      if (mounted && request == _giftRequest) {
+        setState(() {
+          _gifts = [for (final row in (data['results'] as List? ?? const [])) Map<String, dynamic>.from(row as Map)];
+          _giftPage = (data['page'] as num?)?.toInt() ?? 1;
+          _giftPages = (data['pages'] as num?)?.toInt() ?? 1;
+        });
       }
     } on ApiException {
       return;
@@ -114,7 +134,7 @@ class _SupportScreenState extends State<SupportScreen> {
       }
       if (mounted) {
         await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => GiftStatusScreen(reference: reference)));
-        unawaited(_loadGifts());
+        unawaited(_loadGifts(page: 1));
       }
     } on ApiException catch (error) {
       if (mounted) {
@@ -260,11 +280,22 @@ class _SupportScreenState extends State<SupportScreen> {
               padding: const EdgeInsets.fromLTRB(8, 22, 8, 8),
               child: Text(context.t('your_gifts').toUpperCase(), style: Theme.of(context).textTheme.headlineSmall),
             ),
+            if (_gifts != null && (_giftPages > 1 || _giftSearch.text.trim().isNotEmpty)) ...[
+              SearchBox(
+                controller: _giftSearch,
+                hint: context.t('search_gifts'),
+                onChanged: (_) {
+                  _giftTyping?.cancel();
+                  _giftTyping = Timer(const Duration(milliseconds: 400), () => _loadGifts(page: 1));
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
             if (_gifts == null)
               const LoadView()
             else if (_gifts!.isEmpty)
-              Panel(child: Text(context.t('no_gifts'), textAlign: TextAlign.center))
-            else
+              Panel(child: Text(context.t(_giftSearch.text.trim().isEmpty ? 'no_gifts' : 'no_results'), textAlign: TextAlign.center))
+            else ...[
               Panel(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Column(
@@ -289,6 +320,8 @@ class _SupportScreenState extends State<SupportScreen> {
                   ],
                 ),
               ),
+              Pager(page: _giftPage, pages: _giftPages, onPage: (value) => _loadGifts(page: value)),
+            ],
           ],
         ],
       ),

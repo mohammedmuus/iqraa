@@ -305,7 +305,7 @@ class RoundButton extends StatelessWidget {
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onTap,
-          child: SizedBox(width: size, height: size, child: Icon(icon, size: 17, color: Palette.ink)),
+          child: SizedBox(width: size, height: size, child: Icon(icon, size: 17, color: onTap == null ? Palette.quiet : Palette.ink)),
         ),
       ),
     );
@@ -683,6 +683,75 @@ class PullRefresh extends StatelessWidget {
       child: ScrollConfiguration(
         behavior: behavior.copyWith(physics: AlwaysScrollableScrollPhysics(parent: behavior.getScrollPhysics(context))),
         child: child,
+      ),
+    );
+  }
+}
+
+/// A compact search field for a list, with a button to clear it.
+class SearchBox extends StatelessWidget {
+  const SearchBox({super.key, required this.controller, required this.hint, required this.onChanged});
+
+  final TextEditingController controller;
+  final String hint;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) => TextField(
+        controller: controller,
+        onChanged: onChanged,
+        maxLength: 40,
+        textInputAction: TextInputAction.search,
+        style: const TextStyle(fontSize: 13.5),
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: hint,
+          counterText: '',
+          prefixIcon: Icon(Icons.search_rounded, size: 18, color: Palette.muted),
+          suffixIcon: value.text.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: context.t('clear'),
+                  icon: const Icon(Icons.close_rounded, size: 17),
+                  onPressed: () {
+                    controller.clear();
+                    onChanged('');
+                  },
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Previous and next page buttons with the page number between them. Hidden when there is one page.
+class Pager extends StatelessWidget {
+  const Pager({super.key, required this.page, required this.pages, required this.onPage});
+
+  final int page;
+  final int pages;
+  final ValueChanged<int> onPage;
+
+  @override
+  Widget build(BuildContext context) {
+    if (pages <= 1) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          RoundButton(icon: Icons.chevron_left_rounded, label: context.t('previous_page'), onTap: page > 1 ? () => onPage(page - 1) : null),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Text(context.t('page_of', {'n': page, 'total': pages}), style: TextStyle(fontSize: 12.5, color: Palette.muted)),
+          ),
+          RoundButton(icon: Icons.chevron_right_rounded, label: context.t('next_page'), onTap: page < pages ? () => onPage(page + 1) : null),
+        ],
       ),
     );
   }

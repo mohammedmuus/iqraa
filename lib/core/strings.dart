@@ -467,6 +467,14 @@ class Strings {
     'field_tazkiyah': 'Tazkiyah',
     'field_arabic': 'Arabic language',
     'field_general': 'General knowledge',
+    'search_gifts': 'Search by amount, campaign or reference',
+    'search_names': 'Search by name',
+    'search_countries': 'Search country',
+    'page_of': 'Page {n} of {total}',
+    'previous_page': 'Previous page',
+    'next_page': 'Next page',
+    'no_results': 'Nothing matches. Try another word.',
+    'back_to_top': 'Back to top',
   };
 
   static const _sw = {
@@ -927,6 +935,14 @@ class Strings {
     'field_tazkiyah': 'Tazkiya',
     'field_arabic': 'Lugha ya Kiarabu',
     'field_general': 'Elimu ya jumla',
+    'search_gifts': 'Tafuta kwa kiasi, kampeni au namba ya kumbukumbu',
+    'search_names': 'Tafuta kwa jina',
+    'search_countries': 'Tafuta nchi',
+    'page_of': 'Ukurasa {n} kati ya {total}',
+    'previous_page': 'Ukurasa uliopita',
+    'next_page': 'Ukurasa unaofuata',
+    'no_results': 'Hakuna kinacholingana. Jaribu neno lingine.',
+    'back_to_top': 'Rudi juu',
   };
 
   static const _ar = {
@@ -1387,6 +1403,14 @@ class Strings {
     'field_tazkiyah': 'التزكية',
     'field_arabic': 'اللغة العربية',
     'field_general': 'علوم عامة',
+    'search_gifts': 'ابحث بالمبلغ أو الحملة أو الرقم المرجعي',
+    'search_names': 'ابحث بالاسم',
+    'search_countries': 'ابحث عن دولة',
+    'page_of': 'صفحة {n} من {total}',
+    'previous_page': 'الصفحة السابقة',
+    'next_page': 'الصفحة التالية',
+    'no_results': 'لا توجد نتائج مطابقة. جرّب كلمة أخرى.',
+    'back_to_top': 'العودة إلى الأعلى',
   };
 
   static bool has(String key) => _en.containsKey(key);

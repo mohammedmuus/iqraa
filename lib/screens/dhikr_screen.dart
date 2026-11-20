@@ -556,7 +556,7 @@ class _BoardsState extends State<_Boards> {
         if (_board == null)
           LoadView(error: _error, onRetry: _load)
         else
-          BoardList(rows: rows, countries: _kind == 'countries'),
+          BoardList(key: ValueKey(_kind), rows: rows, countries: _kind == 'countries'),
         if (profile != null && onBoards)
           Padding(
             padding: const EdgeInsets.only(top: 6),
@@ -638,55 +638,100 @@ String displayName(BuildContext context, String name) {
   return name.startsWith(prefix) ? '${context.t('muumin')} ${name.substring(prefix.length)}' : name;
 }
 
-class BoardList extends StatelessWidget {
+/// A ranking table, ten rows a page, with a search by name or country once it runs past one page.
+class BoardList extends StatefulWidget {
   const BoardList({super.key, required this.rows, this.countries = false});
 
   final List<Map<String, dynamic>> rows;
   final bool countries;
 
   @override
+  State<BoardList> createState() => _BoardListState();
+}
+
+class _BoardListState extends State<BoardList> {
+  static const _perPage = 10;
+
+  final TextEditingController _search = TextEditingController();
+  String _query = '';
+  int _page = 1;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  String _name(BuildContext context, Map<String, dynamic> row) =>
+      widget.countries ? (countryNames[row['country']] ?? (row['country'] ?? '').toString()) : displayName(context, (row['name'] ?? '').toString());
+
+  @override
   Widget build(BuildContext context) {
+    final rows = widget.rows;
     if (rows.isEmpty) {
       return Panel(child: Text(context.t('board_empty'), textAlign: TextAlign.center));
     }
-    return Panel(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        children: [
-          for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) const Divider(indent: 14, endIndent: 14),
-            Container(
-              color: rows[i]['you'] == true ? Palette.greenSoft : null,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Row(
-                children: [
-                  SizedBox(width: 30, child: Text('${rows[i]['rank']}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Palette.muted))),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+    final query = _query.trim().toLowerCase();
+    final shown = query.isEmpty ? rows : [for (final row in rows) if (_name(context, row).toLowerCase().contains(query)) row];
+    final pages = (shown.length / _perPage).ceil().clamp(1, 1 << 20).toInt();
+    final page = _page.clamp(1, pages).toInt();
+    final slice = shown.skip((page - 1) * _perPage).take(_perPage).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (rows.length > _perPage) ...[
+          SearchBox(
+            controller: _search,
+            hint: context.t(widget.countries ? 'search_countries' : 'search_names'),
+            onChanged: (value) => setState(() {
+              _query = value;
+              _page = 1;
+            }),
+          ),
+          const SizedBox(height: 8),
+        ],
+        if (slice.isEmpty)
+          Panel(child: Text(context.t('no_results'), textAlign: TextAlign.center))
+        else
+          Panel(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              children: [
+                for (var i = 0; i < slice.length; i++) ...[
+                  if (i > 0) const Divider(indent: 14, endIndent: 14),
+                  Container(
+                    color: slice[i]['you'] == true ? Palette.greenSoft : null,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    child: Row(
                       children: [
-                        Text(
-                          countries ? (_countryName(rows[i]['country'])) : (rows[i]['you'] == true ? '${displayName(context, (rows[i]['name'] ?? '').toString())} (${context.t('you_label')})' : displayName(context, (rows[i]['name'] ?? '').toString())),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500, color: Palette.ink),
+                        SizedBox(width: 30, child: Text('${slice[i]['rank']}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Palette.muted))),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                !widget.countries && slice[i]['you'] == true ? '${_name(context, slice[i])} (${context.t('you_label')})' : _name(context, slice[i]),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500, color: Palette.ink),
+                              ),
+                              if (widget.countries) Text(context.t('people_n', {'n': slice[i]['people'] ?? 0}), style: TextStyle(fontSize: 11, color: Palette.muted)),
+                            ],
+                          ),
                         ),
-                        if (countries) Text(context.t('people_n', {'n': rows[i]['people'] ?? 0}), style: TextStyle(fontSize: 11, color: Palette.muted)),
+                        if (slice[i]['change'] is num && slice[i]['change'] != 0) _Move((slice[i]['change'] as num).toInt()),
+                        Text(whole((slice[i]['total'] as num?) ?? 0), style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Palette.ink)),
                       ],
                     ),
                   ),
-                  if (rows[i]['change'] is num && rows[i]['change'] != 0) _Move((rows[i]['change'] as num).toInt()),
-                  Text(whole((rows[i]['total'] as num?) ?? 0), style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Palette.ink)),
                 ],
-              ),
+              ],
             ),
-          ],
-        ],
-      ),
+          ),
+        Pager(page: page, pages: pages, onPage: (value) => setState(() => _page = value)),
+      ],
     );
   }
-
-  String _countryName(Object? code) => countryNames[code] ?? (code ?? '').toString();
 }
 
 class _Groups extends StatefulWidget {
