@@ -186,6 +186,8 @@ class _SupportScreenState extends State<SupportScreen> {
                 DisplayTitle(context.t('support_a'), second: context.t('support_b')),
                 const SizedBox(height: 10),
                 Text(context.t('support_body'), textAlign: TextAlign.justify),
+                const SizedBox(height: 6),
+                Text(context.t('support_cards'), style: TextStyle(fontSize: 12, color: Palette.muted)),
               ],
             ),
           ),
