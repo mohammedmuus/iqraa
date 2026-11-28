@@ -22,6 +22,7 @@ class AppServices {
     dhikr = DhikrStore(api, cache, session);
     rivals = Rivals(api, session);
     reminders.log = readingLog;
+    narration.askToNotify = reminders.askPermission;
     changes = Listenable.merge([session, prefs, downloads, narration, dhikr, reminders, rivals, giving, readingLog]);
     prefs.addListener(_languageChanged);
     session.addListener(_sessionChanged);

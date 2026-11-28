@@ -61,6 +61,10 @@ class Narration extends ChangeNotifier {
   bool failed = false;
   double speed = 1;
   Map<String, dynamic>? lastListened;
+
+  /// Asks to show notifications. Android 13 and newer hide the player controls in the notification bar and on the
+  /// lock screen until the listener allows it, so this runs once, the first time anything plays.
+  Future<bool> Function()? askToNotify;
   List<(int, String)> _cues = const [];
 
   /// A stretch of paragraphs played again and again while memorising. [left] is how many more times, or -1
@@ -134,6 +138,7 @@ class Narration extends ChangeNotifier {
         if ((cue as Map)['paragraph'] != null) ((cue['start_ms'] as num).toInt(), cue['paragraph'].toString()),
     ]..sort((a, b) => a.$1.compareTo(b.$1));
     notifyListeners();
+    unawaited(_askToNotifyOnce());
     final tag = MediaItem(
       id: '${data['id']}-${picked['language']}-${picked['narrator'] ?? ''}',
       title: (data['title'] ?? '').toString(),
@@ -151,6 +156,19 @@ class Narration extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> _askToNotifyOnce() async {
+    final ask = askToNotify;
+    if (ask == null || !Platform.isAndroid) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('asked_notify_playback') ?? false) {
+      return;
+    }
+    await prefs.setBool('asked_notify_playback', true);
+    await ask();
   }
 
   Future<void> toggle() => playing ? _player.pause() : _player.play();
